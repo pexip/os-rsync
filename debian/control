@@ -1,11 +1,13 @@
 Source: rsync
 Section: net
 Priority: optional
-Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Maintainer: Pexip AS <packaging@pexip.com>
+XSBC-Pexip-Original-Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
 XSBC-Original-Maintainer: Paul Slootman <paul@debian.org>
 Build-Depends: libpopt-dev,libacl1-dev,libattr1-dev
 Standards-Version: 3.9.2.0
 Homepage: http://rsync.samba.org/
+XS-Pexip-Upstream: http://archive.ubuntu.com/ubuntu/ precise
 
 Package: rsync
 Architecture: any
