@@ -6,7 +6,7 @@ XSBC-Pexip-Original-Maintainer: Paul Slootman <paul@debian.org>
 Build-Depends: libpopt-dev,libacl1-dev,libattr1-dev
 Standards-Version: 3.9.5
 Homepage: http://rsync.samba.org/
-XS-Pexip-Upstream: http://ftp.debian.org/debian/ jessie
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ stretch
 
 Package: rsync
 Architecture: any
