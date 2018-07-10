@@ -1,10 +1,4 @@
-rsync (3.1.1-3+deb8u1pexip1) pexip; urgency=low
-
-  * New upstream release
-
- -- John-Mark Bell <jmb@pexip.com>  Tue, 02 Jan 2018 12:02:53 +0000
-
-rsync (3.1.1-3+deb8u1) jessie-security; urgency=high
+rsync (3.1.2-1+deb9u1) stretch-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
   * Enforce trailing \0 when receiving xattr name values (CVE-2017-16548)
@@ -14,7 +8,39 @@ rsync (3.1.1-3+deb8u1) jessie-security; urgency=high
   * Check daemon filter against fnamecmp in recv_files() (CVE-2017-17434)
     (Closes: #883665)
 
- -- Salvatore Bonaccorso <carnil@debian.org>  Sun, 10 Dec 2017 14:08:49 +0100
+ -- Salvatore Bonaccorso <carnil@debian.org>  Sun, 10 Dec 2017 13:57:17 +0100
+
+rsync (3.1.2-1) unstable; urgency=medium
+
+  * new upstream release
+  * Bumped Standards-Version to 3.9.8 (no change necessary).
+  * added deb-systemd-helper stuff to maintainer scripts to properly support
+    systemd.
+    closes:#764616
+  * Modified the /etc/default/rsync and /usr/share/doc/rsync/README.Debian 
+    to document how to configure the rsync daemon behaviour when using systemd.
+    closes:#786549
+  * included copy-devices.diff patch from
+    https://rsync.samba.org/ftp/rsync/src/rsync-patches-3.1.2.tar.gz to
+    enable the --copy-devices option to copy the data inside a device instead
+    of copying the node.
+    closes:#509335
+  * included time-limit.diff patch from
+    https://rsync.samba.org/ftp/rsync/src/rsync-patches-3.1.2.tar.gz to
+    enable the -stop-at and --time-limit patches to stop rsync at a certain
+    time or after a certain duration.
+    closes:#701812
+  * Add description of value for --compress-level to manpage.
+    closes:#700697
+  * Don't use hard-coded path to invoke-rc.d for check in prerm script.
+
+ -- Paul Slootman <paul@debian.org>  Fri, 07 Oct 2016 15:48:23 +0200
+
+rsync (3.1.1-3+deb8u1pexip1) pexip; urgency=low
+
+  * New upstream release
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 02 Jan 2018 12:02:53 +0000
 
 rsync (3.1.1-3pexip1) pexip; urgency=low
 

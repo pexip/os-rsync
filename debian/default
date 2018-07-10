@@ -1,4 +1,10 @@
 # defaults file for rsync daemon mode
+#
+# This file is only used for init.d based systems!
+# If this system uses systemd, you can specify options etc. for rsync
+# in daemon mode by copying /lib/systemd/system/rsync.service to
+# /etc/systemd/system/rsync.service and modifying the copy; add required
+# options to the ExecStart line.
 
 # start rsync in daemon mode from init.d script?
 #  only allowed values are "true", "false", and "inetd"
