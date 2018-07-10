@@ -1,3 +1,9 @@
+rsync (3.1.2-1+deb9u1pexip1) pexip; urgency=medium
+
+  * Migrate to Stretch
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 10 Jul 2018 00:20:13 +0000
+
 rsync (3.1.2-1+deb9u1) stretch-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
