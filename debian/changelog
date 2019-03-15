@@ -1,3 +1,10 @@
+rsync (3.1.2-1+deb9u2) stretch; urgency=medium
+
+  * Apply CVEs from 2016 to the zlib code.
+    closes:#924509
+
+ -- Paul Slootman <paul@debian.org>  Fri, 15 Mar 2019 11:39:50 +0100
+
 rsync (3.1.2-1+deb9u1) stretch-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
