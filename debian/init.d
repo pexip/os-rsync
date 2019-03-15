@@ -111,8 +111,13 @@ case "$1" in
 	;;
   stop)
 	log_daemon_msg "Stopping rsync daemon" "rsync"
-	start-stop-daemon --stop --quiet --oknodo --pidfile $RSYNC_PID_FILE
-	log_end_msg $?
+	start-stop-daemon --stop --quiet --oknodo --retry 30 --pidfile $RSYNC_PID_FILE
+	RETVAL="$?"
+	log_end_msg $RETVAL
+	if [ $RETVAL != 0 ]
+	then
+		exit 1
+	fi
 	rm -f $RSYNC_PID_FILE
 	;;
 
@@ -126,8 +131,7 @@ case "$1" in
 	if $RSYNC_ENABLE; then
 	    log_daemon_msg "Restarting rsync daemon" "rsync"
 	    if [ -s $RSYNC_PID_FILE ] && kill -0 $(cat $RSYNC_PID_FILE) >/dev/null 2>&1; then
-		start-stop-daemon --stop --quiet --oknodo --pidfile $RSYNC_PID_FILE || true
-		sleep 1
+		start-stop-daemon --stop --quiet --oknodo --retry 30 --pidfile $RSYNC_PID_FILE
 	    else
 		log_warning_msg "rsync daemon not running, attempting to start."
 	    	rm -f $RSYNC_PID_FILE

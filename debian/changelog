@@ -1,13 +1,94 @@
-rsync (3.1.2-1+deb9u2) stretch; urgency=medium
+rsync (3.1.3-6) unstable; urgency=medium
 
   * Apply CVEs from 2016 to the zlib code.
     closes:#924509
 
- -- Paul Slootman <paul@debian.org>  Fri, 15 Mar 2019 11:39:50 +0100
+ -- Paul Slootman <paul@debian.org>  Fri, 15 Mar 2019 11:25:01 +0100
 
-rsync (3.1.2-1+deb9u1) stretch-security; urgency=high
+rsync (3.1.3-5) unstable; urgency=medium
 
-  * Non-maintainer upload by the Security Team.
+  * d/rules: fix sorting for reproducible builds, in the previous release
+    the -z parameter was used on sort with a newline line terminated input.
+
+ -- Samuel Henrique <samueloph@debian.org>  Sat, 26 Jan 2019 12:05:25 +0000
+
+rsync (3.1.3-4) unstable; urgency=medium
+
+  * d/rules: sort files when using find, now rsync is fully
+    reproducible, thanks to Dhole <dhole@openmailbox.org> for
+    the first patch (closes: #787123)
+
+ -- Samuel Henrique <samueloph@debian.org>  Fri, 25 Jan 2019 18:26:46 +0000
+
+rsync (3.1.3-3) unstable; urgency=medium
+
+  [ Samuel Henrique ]
+  * move source lintian overrides to d/source/lintian-overrides
+  * d/lintian.overrides: add override for false positive spell
+    check 'allow to'
+  * d/rules: sort files before doing md5sum, one step closer to
+    a reproducible build
+  * d/postinst:
+    - remove variable not used anymore
+    - remove checking for release onlder than oldoldstable
+  * d/upstream/signing-key.pgp: export same key but without sigs
+    and clean & minimal
+
+  [ Chris Lamb ]
+  * d/init.d: [stop] ensure the process has stopped before returning
+    (closes: #829193)
+
+ -- Samuel Henrique <samueloph@debian.org>  Fri, 25 Jan 2019 08:49:24 +0000
+
+rsync (3.1.3-2) unstable; urgency=medium
+
+  * Fix --prealloc to keep file-size 0 when possible, from upstream.
+    closes:#919539
+  * Updated systemd unit file to start after network.target.
+    closes:#852080
+  * Don't compress the files shipped in /usr/share/doc/rsync/scripts/
+    closes:#911321
+
+ -- Paul Slootman <paul@debian.org>  Sat, 19 Jan 2019 16:29:09 +0100
+
+rsync (3.1.3-1) unstable; urgency=medium
+
+  * New upstream version 3.1.3 (closes: #906895)
+  * Bump Standards-Version to 4.3.0
+  * Bump watch to v4
+  * Add myself as Uploader
+  * Update Vcs-* fields to salsa
+  * d/control|copyright: use https
+  * d/patches: remove upstream applied patches
+  * d/watch:
+    - better regex to prevent download of wrong tarball
+    - use https
+    - fix syntax of pgpsigurlmangle option
+  * wrap-and-sort -a
+  * Added Documentation tag to systemd unit file. (PS)
+  * Added yodl to build-depends since the manpage is patched during the build.
+    (PS)
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 25 Dec 2018 21:28:11 +0000
+
+rsync (3.1.2-2.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Ignore --protect-args when already sent by client
+    (CVE-2018-5764) (Closes: #887588)
+
+  [Helmut Grohne]
+  * Fix Architecture field of cross built packages. (Closes: #866353)
+
+  [Aurelien Jarno]
+  * Update config.guess for new ports: mips*r6* and riscv64.
+    (Closes: #892968, #883048)
+
+ -- YunQiang Su <syq@debian.org>  Sat, 21 Jul 2018 21:44:31 +0800
+
+rsync (3.1.2-2.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
   * Enforce trailing \0 when receiving xattr name values (CVE-2017-16548)
     (Closes: #880954)
   * Check fname in recv_files sooner (CVE-2017-17433) (Closes: #883667)
@@ -15,7 +96,17 @@ rsync (3.1.2-1+deb9u1) stretch-security; urgency=high
   * Check daemon filter against fnamecmp in recv_files() (CVE-2017-17434)
     (Closes: #883665)
 
- -- Salvatore Bonaccorso <carnil@debian.org>  Sun, 10 Dec 2017 13:57:17 +0100
+ -- Salvatore Bonaccorso <carnil@debian.org>  Wed, 13 Dec 2017 07:34:49 +0100
+
+rsync (3.1.2-2) unstable; urgency=medium
+
+  * Added patch from upstream git to resolve temporary lines in --progress
+    output not being cleared.
+    closes:#749165
+  * Added patch from upstream git to speed up handling of xattrs.
+    closes:#799143
+
+ -- Paul Slootman <paul@debian.org>  Fri, 17 Mar 2017 15:02:00 +0100
 
 rsync (3.1.2-1) unstable; urgency=medium
 
@@ -24,7 +115,7 @@ rsync (3.1.2-1) unstable; urgency=medium
   * added deb-systemd-helper stuff to maintainer scripts to properly support
     systemd.
     closes:#764616
-  * Modified the /etc/default/rsync and /usr/share/doc/rsync/README.Debian 
+  * Modified the /etc/default/rsync and /usr/share/doc/rsync/README.Debian
     to document how to configure the rsync daemon behaviour when using systemd.
     closes:#786549
   * included copy-devices.diff patch from
@@ -552,7 +643,7 @@ rsync (2.6.7-1) unstable; urgency=low
 
   * new upstream version.
     closes:#357314
-  * Includes a patch for an exclude bug when dealing with --relative   
+  * Includes a patch for an exclude bug when dealing with --relative
     while copying an absolute path. This bug will lead to 2.6.8 being released
     within the next couple of weeks, but this way 2.6.7 can get some Debian
     exposure before then.
@@ -680,7 +771,7 @@ rsync (2.6.3-2) unstable; urgency=low
     closes:#279586
   * Removed a double line from the man page left behind while editing.
     closes:#282148
-  * Patch for --bwlimit when used in daemon mode, which enables the behaviour 
+  * Patch for --bwlimit when used in daemon mode, which enables the behaviour
     that rsync had previous to 2.6.3 i.e. specifying a default bwlimit (_not_
     a maximum!).
     closes:#281519
@@ -929,7 +1020,7 @@ rsync (2.5.0-0.3) unstable; urgency=medium
     - Configure for the correct host and target.
   * Backport patch to configure.in and config.h from CVS so we build on
     alpha, ia64, etc.  Yes, this horridly bloats the Debian diff...
-  
+
  -- Colin Walters <walters@debian.org>  Mon, 31 Dec 2001 03:53:47 -0500
 
 rsync (2.5.0-0.2) unstable; urgency=medium
@@ -1122,7 +1213,7 @@ rsync (2.0.0-1) unstable; urgency=low
   * New upstream release
     (this includes the new --daemon code, which needs testing, so consider
      this to be beta software, and use with care)
-  
+
     The alpha version that I released a couple of days ago,
     is incompatible with this version, and should be discarded.
 
@@ -1196,5 +1287,3 @@ rsync (1.6.2-1) unstable; urgency=low
   * Initial Release
 
  -- Philip Hands <phil@hands.com>  Wed, 9 Oct 1996 23:45:08 +0100
-
-
