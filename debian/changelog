@@ -1,3 +1,16 @@
+rsync (3.1.2-1+deb9u2pexip1) pexip; urgency=medium
+
+  * New upstream release
+
+ -- John-Mark Bell <jmb@pexip.com>  Fri, 24 May 2019 14:50:24 +0100
+
+rsync (3.1.2-1+deb9u2) stretch; urgency=medium
+
+  * Apply CVEs from 2016 to the zlib code.
+    closes:#924509
+
+ -- Paul Slootman <paul@debian.org>  Fri, 15 Mar 2019 11:39:50 +0100
+
 rsync (3.1.2-1+deb9u1pexip1) pexip; urgency=medium
 
   * Migrate to Stretch
