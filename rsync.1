@@ -1,4 +1,4 @@
-.TH "rsync" "1" "21 Dec 2015" "" ""
+.TH "rsync" "1" "28 Jan 2018" "" ""
 .SH "NAME"
 rsync \- a fast, versatile, remote (and local) file\-copying tool
 .SH "SYNOPSIS"
@@ -452,10 +452,11 @@ to the detailed description below for a complete description.
  \-J, \-\-omit\-link\-times       omit symlinks from \-\-times
      \-\-super                 receiver attempts super\-user activities
      \-\-fake\-super            store/recover privileged attrs using xattrs
- \-S, \-\-sparse                handle sparse files efficiently
+ \-S, \-\-sparse                turn sequences of nulls into sparse blocks
      \-\-preallocate           allocate dest files before writing
  \-n, \-\-dry\-run               perform a trial run with no changes made
  \-W, \-\-whole\-file            copy files whole (w/o delta\-xfer algorithm)
+     \-\-checksum\-choice=STR   choose the checksum algorithms
  \-x, \-\-one\-file\-system       don'\&t cross filesystem boundaries
  \-B, \-\-block\-size=SIZE       force a fixed checksum block\-size
  \-e, \-\-rsh=COMMAND           specify the remote shell to use
@@ -489,7 +490,7 @@ to the detailed description below for a complete description.
      \-\-contimeout=SECONDS    set daemon connection timeout in seconds
  \-I, \-\-ignore\-times          don'\&t skip files that match size and time
      \-\-size\-only             skip files that match in size
-     \-\-modify\-window=NUM     compare mod\-times with reduced accuracy
+ \-@, \-\-modify\-window=NUM     set the accuracy for mod\-time comparisons
  \-T, \-\-temp\-dir=DIR          create temporary files in directory DIR
  \-y, \-\-fuzzy                 find similar file for basis if no dest file
      \-\-compare\-dest=DIR      also compare received files relative to DIR
@@ -701,14 +702,29 @@ time to just looking for files that have changed in size.  This is useful
 when starting to use rsync after using another mirroring system which may
 not preserve timestamps exactly.
 .IP 
-.IP "\fB\-\-modify\-window\fP"
+.IP "\fB\-@, \-\-modify\-window\fP"
 When comparing two timestamps, rsync treats the
 timestamps as being equal if they differ by no more than the modify\-window
-value.  This is normally 0 (for an exact match), but you may find it useful
-to set this to a larger value in some situations.  In particular, when
-transferring to or from an MS Windows FAT filesystem (which represents
-times with a 2\-second resolution), \fB\-\-modify\-window=1\fP is useful
-(allowing times to differ by up to 1 second).
+value.  The default is 0, which matches just integer seconds.  If you specify a
+negative value (and the receiver is at least version 3.1.3) then nanoseconds
+will also be taken into account.  Specifying 1 is useful for copies to/from MS
+Windows FAT filesystems, because FAT represents times with a 2\-second
+resolution (allowing times to differ from the original by up to 1 second).
+.IP 
+If you want all your transfers to default to comparing nanoseconds, you can
+create a ~/.popt file and put these lines in it:
+.IP 
+.RS 
+\f(CW   rsync alias \-a \-a@\-1\fP
+.RE
+.RS 
+\f(CW   rsync alias \-t \-t@\-1\fP
+.RE
+
+.IP 
+With that as the default, you\(cq\&d need to specify \fB\-\-modify\-window=0\fP (aka
+\fB\-@0\fP) to override it and ignore nanoseconds, e.g. if you\(cq\&re copying between
+ext3 and ext4, or if the receiving rsync is older than 3.1.3.
 .IP 
 .IP "\fB\-c, \-\-checksum\fP"
 This changes the way rsync checks if the files have
@@ -888,7 +904,7 @@ backup file goes and what (if any) suffix gets appended using the
 \fB\-\-backup\-dir\fP and \fB\-\-suffix\fP options.
 .IP 
 Note that if you don\(cq\&t specify \fB\-\-backup\-dir\fP, (1) the
-\fB\-\-omit\-dir\-times\fP option will be implied, and (2) if \fB\-\-delete\fP is
+\fB\-\-omit\-dir\-times\fP option will be forced on, and (2) if \fB\-\-delete\fP is
 also in effect (without \fB\-\-delete\-excluded\fP), rsync will add a \(dq\&protect\(dq\&
 filter\-rule for the backup suffix to the end of all your existing excludes
 (e.g. \fB\-f \(dq\&P *~\(dq\&\fP).  This will prevent previously backed\-up files from being
@@ -991,9 +1007,7 @@ the same or longer than the size on the sender, the file is skipped.  This
 does not interfere with the updating of a file\(cq\&s non\-content attributes
 (e.g. permissions, ownership, etc.) when the file does not need to be
 transferred, nor does it affect the updating of any non\-regular files.
-Implies \fB\-\-inplace\fP,
-but does not conflict with \fB\-\-sparse\fP (since it is always extending a
-file\(cq\&s length).
+Implies \fB\-\-inplace\fP.
 .IP 
 The use of \fB\-\-append\fP can be dangerous if you aren\(cq\&t 100% sure that the files
 that are longer have only grown by the appending of data onto the end.  You
@@ -1270,9 +1284,36 @@ super\-user copies all namespaces except system.*.  A normal user only copies
 the user.* namespace.  To be able to backup and restore non\-user namespaces as
 a normal user, see the \fB\-\-fake\-super\fP option.
 .IP 
-Note that this option does not copy rsyncs special xattr values (e.g. those
-used by \fB\-\-fake\-super\fP) unless you repeat the option (e.g. \-XX).  This
-\(dq\&copy all xattrs\(dq\& mode cannot be used with \fB\-\-fake\-super\fP.
+The above name filtering can be overridden by using one or more filter options
+with the \fBx\fP modifier. When you specify an xattr\-affecting filter rule, rsync
+requires that you do your own system/user filtering, as well as any additional
+filtering for what xattr names are copied and what names are allowed to be
+deleted.  For example, to skip the system namespace, you could specify:
+.IP 
+.RS 
+\-\-filter=\(cq\&\-x system.*\(cq\&
+.RE
+
+.IP 
+To skip all namespaces except the user namespace, you could specify a
+negated\-user match:
+.IP 
+.RS 
+\-\-filter=\(cq\&\-x! user.*\(cq\&
+.RE
+
+.IP 
+To prevent any attributes from being deleted, you could specify a receiver\-only
+rule that excludes all names:
+.IP 
+.RS 
+\-\-filter=\(cq\&\-xr *\(cq\&
+.RE
+
+.IP 
+Note that the \fB\-X\fP option does not copy rsync\(cq\&s special xattr values (e.g.
+those used by \fB\-\-fake\-super\fP) unless you repeat the option (e.g. \-XX).
+This \(dq\&copy all xattrs\(dq\& mode cannot be used with \fB\-\-fake\-super\fP.
 .IP 
 .IP "\fB\-\-chmod\fP"
 This option tells rsync to apply one or more
@@ -1423,20 +1464,30 @@ See also the \(dq\&fake super\(dq\& setting in the daemon\(cq\&s rsyncd.conf fil
 .IP 
 .IP "\fB\-S, \-\-sparse\fP"
 Try to handle sparse files efficiently so they take
-up less space on the destination.  Conflicts with \fB\-\-inplace\fP because it\(cq\&s
-not possible to overwrite data in a sparse fashion.
+up less space on the destination.  If combined with \fB\-\-inplace\fP the
+file created might not end up with sparse blocks with some combinations
+of kernel version and/or filesystem type.  If \fB\-\-whole\-file\fP is in
+effect (e.g. for a local copy) then it will always work because rsync
+truncates the file prior to writing out the updated version.
+.IP 
+Note that versions of rsync older than 3.1.3 will reject the combination of
+\fB\-\-sparse\fP and \fB\-\-inplace\fP.
 .IP 
 .IP "\fB\-\-preallocate\fP"
 This tells the receiver to allocate each destination
-file to its eventual size before writing data to the file.  Rsync will only use
-the real filesystem\-level preallocation support provided by Linux\(cq\&s
+file to its eventual size before writing data to the file.  Rsync will only
+use the real filesystem\-level preallocation support provided by Linux\(cq\&s
 \fBfallocate\fP(2) system call or Cygwin\(cq\&s \fBposix_fallocate\fP(3), not the slow
-glibc implementation that writes a zero byte into each block.
+glibc implementation that writes a null byte into each block.
 .IP 
 Without this option, larger files may not be entirely contiguous on the
 filesystem, but with this option rsync will probably copy more slowly.  If the
 destination is not an extent\-supporting filesystem (such as ext4, xfs, NTFS,
 etc.), this option may have no positive effect at all.
+.IP 
+If combined with \fB\-\-sparse\fP, the file will only have sparse blocks (as
+opposed to allocated sequences of null bytes) if the kernel version and
+filesystem type support creating holes in the allocated data.
 .IP 
 .IP "\fB\-n, \-\-dry\-run\fP"
 This makes rsync perform a trial run that doesn\(cq\&t
@@ -1455,13 +1506,27 @@ statistics are too small, and the \(dq\&speedup\(dq\& value is equivalent to a r
 where no file transfers were needed.
 .IP 
 .IP "\fB\-W, \-\-whole\-file\fP"
-With this option rsync\(cq\&s delta\-transfer algorithm
-is not used and the whole file is sent as\-is instead.  The transfer may be
+This option disables rsync\(cq\&s delta\-transfer algorithm,
+which causes all transferred files to be sent whole.  The transfer may be
 faster if this option is used when the bandwidth between the source and
 destination machines is higher than the bandwidth to disk (especially when the
 \(dq\&disk\(dq\& is actually a networked filesystem).  This is the default when both
 the source and destination are specified as local paths, but only if no
 batch\-writing option is in effect.
+.IP 
+.IP "\fB\-\-checksum\-choice=STR\fP"
+This option overrides the checksum algoriths.
+If one algorithm name is specified, it is used for both the transfer checksums
+and (assuming \fB\-\-checksum\fP is specifed) the pre\-transfer checksumming. If two
+comma\-separated names are supplied, the first name affects the transfer
+checksums, and the second name affects the pre\-transfer checksumming.
+.IP 
+The algorithm choices are \(dq\&auto\(dq\&, \(dq\&md4\(dq\&, \(dq\&md5\(dq\&, and \(dq\&none\(dq\&.  If \(dq\&none\(dq\& is
+specified for the first name, the \fB\-\-whole\-file\fP option is forced on and no
+checksum verification is performed on the transferred data.  If \(dq\&none\(dq\& is
+specified for the second name, the \fB\-\-checksum\fP option cannot be used. The
+\(dq\&auto\(dq\& option is the default, where rsync bases its algorithm choice on the
+protocol version (for backward compatibility with older rsync versions).
 .IP 
 .IP "\fB\-x, \-\-one\-file\-system\fP"
 This tells rsync to avoid crossing a
@@ -1788,7 +1853,7 @@ When performing a local transfer, the \(dq\&local\(dq\& side is the sender and t
 .IP 
 Note some versions of the popt option\-parsing library have a bug in them that
 prevents you from using an adjacent arg with an equal in it next to a short
-option letter (e.g. \f(CW\-M\-\-log\-file=/tmp/foo\fP.  If this bug affects your
+option letter (e.g. \f(CW\-M\-\-log\-file=/tmp/foo\fP).  If this bug affects your
 version of popt, you can use the version of popt that is included with rsync.
 .IP 
 .IP "\fB\-C, \-\-cvs\-exclude\fP"
@@ -2113,7 +2178,7 @@ ownership (such as OS X\(cq\&s \(dq\&Ignore ownership on this volume\(dq\& optio
 .IP 
 Beginning in version 2.6.4, multiple \fB\-\-link\-dest\fP directories may be
 provided, which will cause rsync to search the list in the order specified
-for an exact match.
+for an exact match (there is a limit of 20 such directories).
 If a match is found that differs only in attributes, a local copy is made
 and the attributes updated.
 If a match is not found, a basis file from one of the \fIDIR\fPs will be
@@ -3065,8 +3130,7 @@ is the case.
 .IP "\fB\-h, \-\-help\fP"
 When specified after \fB\-\-daemon\fP, print a short help
 page describing the options available for starting an rsync daemon.
-
-.PP 
+.IP 
 .SH "FILTER RULES"
 
 .PP 
@@ -3203,16 +3267,20 @@ version 2.6.7.
 
 .PP 
 Note that, when using the \fB\-\-recursive\fP (\fB\-r\fP) option (which is implied by
-\fB\-a\fP), every subcomponent of every path is visited from the top down, so
-include/exclude patterns get applied recursively to each subcomponent\(cq\&s
-full name (e.g. to include \(dq\&/foo/bar/baz\(dq\& the subcomponents \(dq\&/foo\(dq\& and
-\(dq\&/foo/bar\(dq\& must not be excluded).
-The exclude patterns actually short\-circuit the directory traversal stage
-when rsync finds the files to send.  If a pattern excludes a particular
-parent directory, it can render a deeper include pattern ineffectual
-because rsync did not descend through that excluded section of the
-hierarchy.  This is particularly important when using a trailing \(cq\&*\(cq\& rule.
-For instance, this won\(cq\&t work:
+\fB\-a\fP), every subdir component of every path is visited left to right, with
+each directory having a chance for exclusion before its content.  In this way
+include/exclude patterns are applied recursively to the pathname of each node
+in the filesystem\(cq\&s tree (those inside the transfer).  The exclude patterns
+short\-circuit the directory traversal stage as rsync finds the files to send.
+.PP 
+For instance, to include \(dq\&/foo/bar/baz\(dq\&, the directories \(dq\&/foo\(dq\& and \(dq\&/foo/bar\(dq\&
+must not be excluded.  Excluding one of those parent directories prevents the
+examination of its content, cutting off rsync\(cq\&s recursion into those paths and
+rendering the include for \(dq\&/foo/bar/baz\(dq\& ineffectual (since rsync can\(cq\&t match
+something it never sees in the cut\-off section of the directory hierarchy).
+.PP 
+The concept path exclusion is particularly important when using a trailing \(cq\&*\(cq\&
+rule.  For instance, this won\(cq\&t work:
 .PP 
 .RS 
 \f(CW+ /some/path/this\-file\-will\-not\-be\-found\fP
@@ -3308,6 +3376,11 @@ ignored in directories that are being deleted.  For instance, the \fB\-C\fP
 option\(cq\&s default rules that exclude things like \(dq\&CVS\(dq\& and \(dq\&*.o\(dq\& are
 marked as perishable, and will not prevent a directory that was removed
 on the source from being deleted on the destination.
+.IP o 
+An \fBx\fP indicates that a rule affects xattr names in xattr copy/delete
+operations (and is thus ignored when matching file/dir names). If no
+xattr\-matching rules are specified, a default xattr filtering rule is
+used (see the \fB\-\-xattrs\fP option).
 
 .PP 
 .SH "MERGE\-FILE FILTER RULES"
@@ -3953,7 +4026,7 @@ http://rsync.samba.org/
 .SH "VERSION"
 
 .PP 
-This man page is current for version 3.1.2 of rsync.
+This man page is current for version 3.1.3 of rsync.
 .PP 
 .SH "INTERNAL OPTIONS"
 

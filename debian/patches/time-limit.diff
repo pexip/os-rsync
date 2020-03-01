@@ -312,37 +312,3 @@ diff -Nurp a/proto.h b/proto.h
  int set_modtime(const char *fname, time_t modtime, uint32 mod_nsec, mode_t mode);
  int make_path(char *fname, int flags);
  int full_write(int desc, const char *ptr, size_t len);
-diff -Nurp a/rsync.1 b/rsync.1
---- a/rsync.1
-+++ b/rsync.1
-@@ -527,6 +527,8 @@ to the detailed description below for a
-      \-\-password\-file=FILE    read daemon\-access password from FILE
-      \-\-list\-only             list the files instead of copying them
-      \-\-bwlimit=RATE          limit socket I/O bandwidth
-+     \-\-stop\-at=y\-m\-dTh:m     Stop rsync at year\-month\-dayThour:minute
-+     \-\-time\-limit=MINS       Stop rsync after MINS minutes have elapsed
-      \-\-write\-batch=FILE      write a batched update to FILE
-      \-\-only\-write\-batch=FILE like \-\-write\-batch but w/o updating dest
-      \-\-read\-batch=FILE       read a batched update from FILE
-@@ -2872,6 +2874,21 @@ files can show up as being rapidly sent
- while other can show up as very slow when the flushing of the output buffer
- occurs.  This may be fixed in a future version.
- .IP 
-+.IP "\fB\-\-stop\-at=y\-m\-dTh:m\fP"
-+This option allows you to specify at what
-+time to stop rsync, in year\-month\-dayThour:minute numeric format (e.g.
-+2004\-12\-31T23:59).  You can specify a 2 or 4\-digit year.  You can also
-+leave off various items and the result will be the next possible time
-+that matches the specified data.  For example, \(dq\&1\-30\(dq\& specifies the next
-+January 30th (at midnight), \(dq\&04:00\(dq\& specifies the next 4am, \(dq\&1\(dq\&
-+specifies the next 1st of the month at midnight, and \(dq\&:59\(dq\& specifies the
-+next 59th minute after the hour.  If you prefer, you may separate the
-+date numbers using slashes instead of dashes.
-+.IP 
-+.IP "\fB\-\-time\-limit=MINS\fP"
-+This option allows you to specify the maximum
-+number of minutes rsync will run for.
-+.IP 
- .IP "\fB\-\-write\-batch=FILE\fP"
- Record a file that can later be applied to
- another identical destination with \fB\-\-read\-batch\fP. See the \(dq\&BATCH MODE\(dq\&
