@@ -45,18 +45,18 @@ struct align_test {
 #define PTR_ADD(b,o)	( (void*) ((char*)(b) + (o)) )
 
 alloc_pool_t
-pool_create(size_t size, size_t quantum, void (*bomb)(const char *), int flags)
+pool_create(size_t size, size_t quantum, void (*bomb)(const char*, const char*, int), int flags)
 {
 	struct alloc_pool *pool;
 
-	if (!(pool = new0(struct alloc_pool)))
-		return NULL;
-
 	if ((MINALIGN & (MINALIGN - 1)) != 0) {
 		if (bomb)
-			(*bomb)("Compiler error: MINALIGN is not a power of 2\n");
+			(*bomb)("Compiler error: MINALIGN is not a power of 2", __FILE__, __LINE__);
 		return NULL;
 	}
+
+	if (!(pool = new0(struct alloc_pool)))
+		return NULL;
 
 	if (!size)
 		size = POOL_DEF_EXTENT;
@@ -169,7 +169,7 @@ pool_alloc(alloc_pool_t p, size_t len, const char *bomb_msg)
 
   bomb_out:
 	if (pool->bomb)
-		(*pool->bomb)(bomb_msg);
+		(*pool->bomb)(bomb_msg, __FILE__, __LINE__);
 	return NULL;
 }
 

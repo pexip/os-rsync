@@ -1,0 +1,16 @@
+Description: Fix build vs host detection on configure script (FTCBFS)
+Author: Helmut Grohne <helmut@subdivi.de>
+Bug-Debian: http://bugs.debian.org/971285
+Index: rsync/configure.ac
+===================================================================
+--- rsync.orig/configure.ac
++++ rsync/configure.ac
+@@ -211,7 +211,7 @@ CXXFLAGS=`echo "$CXXFLAGS" | sed 's/-g /
+ 
+ if test x"$enable_simd" != x"no"; then
+     # For x86-64 SIMD, g++ >=5 or clang++ >=7 is required
+-    if test x"$build_cpu" = x"x86_64"; then
++    if test x"$host_cpu" = x"x86_64"; then
+ 	AC_LANG(C++)
+ 	AC_RUN_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>
+ #include <immintrin.h>
