@@ -1,3 +1,189 @@
+rsync (3.2.3-4+deb11u1) bullseye; urgency=medium
+
+  * debian/patches:
+    - copy-devices: Re-add upstream patch for --copy-devices, the
+      --write-device option is not fully equivalent (closes: #992215).
+    - fix_delay_updates: New patch from upstream to fix regression
+      in option --delay-updates (closes: #992231).
+    - fix_mkpath.patch: New upstream patch to fix an edge case on --mkpath.
+    - fix_rsync-ssl_RSYNC_SSL_CERT_feature: New upstream patch to fix an edge
+      case on rsync-ssl.
+    - fix_sparse_inplace: New upstream patch to fix --sparse + --inplace
+      options.
+    - manpage_upstream_fixes: Import multiple upstream patches to fix
+      manpage.
+    - update_rrsync_options: New upstream patch to update rrsync options.
+  * d/rsync.docs: Add NEWS.md file (previously named NEWS) (closes: #993697).
+
+ -- Samuel Henrique <samueloph@debian.org>  Sat, 18 Sep 2021 00:50:07 +0100
+
+rsync (3.2.3-4) unstable; urgency=medium
+
+  [ Helmut Grohne ]
+  * d/p/fix_ftcbfs_configure.patch: New patch to fix FTCBFS (closes: #971285)
+
+  [ Samuel Henrique ]
+  * Bump Standards-Version to 4.5.1
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 02 Feb 2021 23:08:54 +0000
+
+rsync (3.2.3-3) unstable; urgency=high
+
+  * d/p/CVE-2020-14387.patch: New patch to fix an openssl related CVE
+    (closes: #969530, CVE-2020-14387)
+
+ -- Samuel Henrique <samueloph@debian.org>  Sat, 19 Dec 2020 12:48:33 +0000
+
+rsync (3.2.3-2) unstable; urgency=medium
+
+  [ Sergio Durigan Junior ]
+  * Make the autopkgtests cross-friendly.
+    Thanks to Steve Langasek <steve.langasek@ubuntu.com>
+
+ -- Samuel Henrique <samueloph@debian.org>  Wed, 26 Aug 2020 21:23:57 +0100
+
+rsync (3.2.3-1) unstable; urgency=medium
+
+  * New upstream version 3.2.3
+  * debian/patches:
+    - time-limit.diff: Remove patch, applied upstream now
+    - disable_reconfigure_req.diff: Refresh patch and dep3 headers
+    - perl_shebang.patch: Update patch
+    - fix_bwlimit_0.patch: Remove patch, applied upstream
+
+ -- Samuel Henrique <samueloph@debian.org>  Sun, 09 Aug 2020 13:41:10 +0100
+
+rsync (3.2.2-2) unstable; urgency=medium
+
+  * d/p/fix_bwlimit_0.patch: New upstream patch to fix bwlimit=0
+    (closes: #964587)
+
+ -- Samuel Henrique <samueloph@debian.org>  Fri, 10 Jul 2020 18:35:21 +0100
+
+rsync (3.2.2-1) unstable; urgency=medium
+
+  * New upstream version 3.2.2
+  * d/rsync.install: Install rsync-no-vanished (closes: #353697)
+
+ -- Samuel Henrique <samueloph@debian.org>  Mon, 06 Jul 2020 19:01:52 +0100
+
+rsync (3.2.1-1) unstable; urgency=medium
+
+  * New upstream version 3.2.1
+  * Remove patches applied upstream:
+    - backup-dir-implies-backup.diff
+    - manpage-compress-level.diff
+    - systemd-unit.diff
+  * d/patches:
+    - logdir.diff: Remove patch since logdir which comes with file is the
+      default one
+    - time-limit.diff: Update patch from upstream
+  * d/u/signing-key.asc: Fix signing key
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 23 Jun 2020 18:16:52 +0100
+
+rsync (3.2.0-1) unstable; urgency=low
+
+  * New upstream version 3.2.0
+  * Bump DH to 13
+  * Bump Standards Version to 4.5.0
+  * Stop using bundled zlib in favor of dynamic linking to zlib1g-dev
+  * Install manpages from build directory instead of sources
+  * d/control:
+    - Add Suggests on python3 for the script git-set-file-times under /usr/share
+    - Remove unneeded build-dependency libattr1-dev (closes: #953927)
+    - Update Build-Deps, remove yodl and add new libs
+  * d/copyright: Update file to add the new openssl exemption to the gpl3
+    license
+  * d/u/metadata: Add Bug-Submit and Bug-Database fields
+  * d/upstream/signining-key: Change format from pgp to armored .asc
+  * d/rsync.NEWS: Add information about two parameter name changes
+  * d/rsync.manpages: Add new manpage rsync-ssl.1
+  * d/s/include-binaries: Remove file now that gpg key is in armored mode in asc
+    file
+  * d/patches:
+    - skip_devices_test.patch: New patch to skip devices test because it
+      fails on kfreebsd and hurd
+    - perl_shebang.patch: New patch to remove usage of env from perl shebang
+    - disable_reconfigure_req.diff: Refresh patch
+    - backup-dir-implies-backup.diff: Update patch
+    - manpage-compress-level.diff: Update patch
+    - systemd-unit.diff: Update patch, only adds list of manpages now
+    - time-limit.diff: Update patch from upstream
+    - Remove patches applied upstream:
+      ~ CVE-2016-9840.patch
+      ~ CVE-2016-9841.patch
+      ~ CVE-2016-9842.patch
+      ~ CVE-2016-9843.patch
+      ~ Two-spelling-mistakes-in-rsync.yo.diff
+      ~ prealloc-fix.diff
+      ~ ssh-6-option.diff
+      ~ copy-devices.diff: --copy-devices is now --write-devices
+      ~ noatime.diff: --noatime is now --open-noatime
+
+  [ Debian Janitor ]
+  * Set upstream metadata fields: Repository.
+
+ -- Samuel Henrique <samueloph@debian.org>  Sat, 20 Jun 2020 18:05:57 +0100
+
+rsync (3.1.3-8) unstable; urgency=medium
+
+  * Link rrsync in /usr/bin/
+  * Run upstream tests at build time:
+    -  d/rules: Stop overriding dh_auto_test
+    -  d/p/noatime.diff: Change patch to address test failure
+  * Run upstream tests on autopkgtest
+  * d/rsync.install: Move scripts to /usr/share/ instead of usr/share/doc/
+    (closes: #911321):
+    - rsync.NEWS: Create file and tell about scripts new location
+  * d/salsa-ci.yml: Skip repro tests for now
+  * d/p/noatime.diff:
+    - Fix DEP-3 headers
+    - Fix typo
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 15 Oct 2019 01:04:36 +0100
+
+rsync (3.1.3-7) unstable; urgency=low
+
+  * Bump Standards-Version to 4.4.1
+  * Add salsa-ci.yml
+  * Convert packaging to use debhelper:
+    - Automatically build dbgsym package (closes: #920052)
+    - Use quilt for patches:
+      ~ Refresh all patches
+      ~ Remove lintian override for lack of patch series file
+      ~ d/rules: Stop applying patches here, use quilt instead
+    - Use debhelper instead of maint scripts to deal with .init file
+      ~ Create symlink for .service file in debian/ because DH is not
+        finding it
+    - d/control:
+      ~ Add Rules-Requires-Root: no
+      ~ Add '${misc:Depends}' Dependency
+      ~ Add Pre-Depends '${misc:Pre-Depends}'
+      ~ Add debhelper-compat build-dependency
+      ~ Remove build-dependency on autotools, not needed with debelpher
+    - d/rules:
+      ~ Add export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+      ~ Use parameter --with-included-zlib=yes on configure
+      ~ override_dh_auto_test: don't run make test
+    - d/rsync.examples: Create file and install same files as before moving
+      to DH
+    - d/rsync.install: Create file and install same files as before moving
+      to DH
+    - d/p/disable_reconfigure_req.diff: Disable reconfigure check at Makefile
+  * d/control:
+    - Remove dependency lsb-base version requirement, required version was
+      released in 2008
+    - Remove breaks duplicity, breakable version was superseded in 2011
+    - Remove base-files dependency as it is an essential package and version
+      required was released in 2007
+  * d/rsync.default: Fix name of file
+  * d/rsync.lintian-overrides:
+    - Fix name of file
+    - Remove unused override
+
+ -- Samuel Henrique <samueloph@debian.org>  Sun, 06 Oct 2019 16:47:47 +0100
+
 rsync (3.1.3-6pexip2) pexip; urgency=medium
 
   * Rebuild in buster environment
