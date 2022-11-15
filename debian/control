@@ -10,8 +10,7 @@ Build-Depends: debhelper-compat (= 13),
                liblz4-dev,
                libxxhash-dev,
                libzstd-dev,
-               zlib1g-dev,
-               libssl-dev (>= 3)
+               zlib1g-dev
 Standards-Version: 4.5.1
 Rules-Requires-Root: no
 Homepage: https://rsync.samba.org/
