@@ -1,3 +1,9 @@
+rsync (3.2.3-4+deb11u1pexip5) pexip-bullseye-openssl3; urgency=medium
+
+  * Drop OpenSSL support
+
+ -- John-Mark Bell <jmb@pexip.com>  Thu, 01 Dec 2022 22:47:59 +0000
+
 rsync (3.2.3-4+deb11u1pexip4) pexip-bullseye; urgency=medium
 
   * Bullseye rebuild for ARM64 inclusion
