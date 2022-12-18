@@ -68,6 +68,6 @@ Index: rsync/testsuite/devices.test
 +# Debian patch to skip this test as it fails on kfreebsd and hurd
 +test_skipped "Patched by Debian to skip as it fails on kfreebsd and hurd"
 +
- chkfile="$scratchdir/rsync.chk"
- outfile="$scratchdir/rsync.out"
+ # Build some hardlinks
  
+ case $0 in

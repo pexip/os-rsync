@@ -1,4 +1,5 @@
-.TH "rsyncd.conf" "5" "06 Aug 2020" "rsyncd.conf 3.2.3" "User Commands"
+.TH "rsyncd.conf" "5" "20 Oct 2022" "rsyncd.conf from rsync 3.2.7" "User Commands"
+.\" prefix=/usr
 .P
 .SH "NAME"
 .P
@@ -7,6 +8,9 @@ rsyncd.conf \- configuration file for rsync in daemon mode
 .SH "SYNOPSIS"
 .P
 rsyncd.conf
+.P
+The online version of this manpage (that includes cross-linking of topics)
+is available at https://download.samba.org/pub/rsync/rsyncd.conf.5.
 .P
 .SH "DESCRIPTION"
 .P
@@ -44,8 +48,7 @@ Case is not significant in boolean values, but is preserved in string values.
 .P
 .SH "LAUNCHING THE RSYNC DAEMON"
 .P
-The rsync daemon is launched by specifying the \fB\-\-daemon\fP option to
-rsync.
+The rsync daemon is launched by specifying the \fB\-\-daemon\fP option to rsync.
 .P
 The daemon must run with root privileges if you wish to use chroot, to bind to
 a port numbered under 1024 (as is the default 873), or to set file ownership.
@@ -103,9 +106,9 @@ string in a path could result in a very unsafe path).  The safest way to insert
 a literal % into a value is to use %%.
 .P
 .IP "\fBmotd\ file\fP"
-This parameter allows you to specify a "message of the day" to display to
-clients on each connect. This usually contains site information and any
-legal notices. The default is no motd file.  This can be overridden by the
+This parameter allows you to specify a "message of the day" (MOTD) to display
+to clients on each connect. This usually contains site information and any
+legal notices. The default is no MOTD file.  This can be overridden by the
 \fB\-\-dparam=motdfile=FILE\fP command-line option when starting the daemon.
 .IP "\fBpid\ file\fP"
 This parameter tells the rsync daemon to write its process ID to that file.
@@ -125,7 +128,7 @@ inetd, and is superseded by the \fB\-\-address\fP command-line option.
 .IP "\fBsocket\ options\fP"
 This parameter can provide endless fun for people who like to tune their
 systems to the utmost degree. You can set all sorts of socket options which
-may make transfers faster (or slower!). Read the man page for the
+may make transfers faster (or slower!). Read the manpage for the
 \fBsetsockopt()\fP system call for details on some of the options you may be
 able to set. By default no special socket options are set.  These settings
 can also be specified via the \fB\-\-sockopts\fP command-line option.
@@ -156,6 +159,20 @@ This parameter specifies the directory in the daemon's filesystem to make
 available in this module.  You must specify this parameter for each module
 in \fBrsyncd.conf\fP.
 .IP
+If the value contains a "/./" element then the path will be divided at that
+point into a chroot dir and an inner-chroot subdir.  If \fBuse\ chroot\fP
+is set to false, though, the extraneous dot dir is just cleaned out of the
+path.  An example of this idiom is:
+.RS 4
+.IP
+.nf
+path = /var/rsync/./module1
+.fi
+.RE
+.IP
+This will (when chrooting) chroot to "/var/rsync" and set the inside-chroot
+path to "/module1".
+.IP
 You may base the path's value off of an environment variable by surrounding
 the variable name with percent signs.  You can even reference a variable
 that is set by rsync when the user connects.  For example, this would use
@@ -181,29 +198,47 @@ follow symbolic links that are either absolute or outside of the new root
 path, and of complicating the preservation of users and groups by name (see
 below).
 .IP
-As an additional safety feature, you can specify a dot-dir in the module's
-"path" to indicate the point where the chroot should occur.  This allows
-rsync to run in a chroot with a non-"/" path for the top of the transfer
-hierarchy.  Doing this guards against unintended library loading (since
-those absolute paths will not be inside the transfer hierarchy unless you
-have used an unwise pathname), and lets you setup libraries for the chroot
-that are outside of the transfer.  For example, specifying
-"/var/rsync/./module1" will chroot to the "/var/rsync" directory and set
-the inside-chroot path to "/module1".  If you had omitted the dot-dir, the
-chroot would have used the whole path, and the inside-chroot path would
-have been "/".
+If \fBuse\ chroot\fP is not set, it defaults to trying to enable a chroot but
+allows the daemon to continue (after logging a warning) if it fails. The
+one exception to this is when a module's \fBpath\fP has a "/./" chroot
+divider in it\ \-\- this causes an unset value to be treated as true for that
+module.
 .IP
-When both "use chroot" and "daemon chroot" are false, OR the inside-chroot
-path of "use chroot" is not "/", rsync will: (1) munge symlinks by default
-for security reasons (see "munge symlinks" for a way to turn this off, but
-only if you trust your users), (2) substitute leading slashes in absolute
-paths with the module's path (so that options such as \fB\-\-backup-dir\fP,
-\fB\-\-compare-dest\fP, etc. interpret an absolute path as rooted in the module's
-"path" dir), and (3) trim ".." path elements from args if rsync believes
-they would escape the module hierarchy.  The default for "use chroot" is
-true, and is the safer choice (especially if the module is not read-only).
+Prior to rsync 3.2.7, the default value was "true".  The new "unset"
+default makes it easier to setup an rsync daemon as a non-root user or to
+run a daemon on a system where chroot fails.  Explicitly setting the value
+to "true" in rsyncd.conf will always require the chroot to succeed.
 .IP
-When this parameter is enabled \fIand\fP the "name converter" parameter is
+It is also possible to specify a dot-dir in the module's "path" to
+indicate that you want to chdir to the earlier part of the path and then
+serve files from inside the latter part of the path (with sanitizing and
+default symlink munging).  This can be useful if you need some library dirs
+inside the chroot (typically for uid & gid lookups) but don't want to put
+the lib dir into the top of the served path (even though they can be hidden
+with an \fBexclude\fP directive).  However, a better choice for a modern
+rsync setup is to use a \fBname\ converter\fP" and try to avoid inner lib
+dirs altogether.  See also the \fBdaemon\ chroot\fP parameter, which causes
+rsync to chroot into its own chroot area before doing any path-related
+chrooting.
+.IP
+If the daemon is serving the "/" dir (either directly or due to being
+chrooted to the module's path), rsync does not do any path sanitizing or
+(default) munging.
+.IP
+When it has to limit access to a particular subdir (either due to chroot
+being disabled or having an inside-chroot path set), rsync will munge
+symlinks (by default) and sanitize paths.  Those that dislike munged
+symlinks (and really, really trust their users to not break out of the
+subdir) can disable the symlink munging via the "munge symlinks"
+parameter.
+.IP
+When rsync is sanitizing paths, it trims ".." path elements from args that
+it believes would escape the module hierarchy. It also substitutes leading
+slashes in absolute paths with the module's path (so that options such as
+\fB\-\-backup-dir\fP & \fB\-\-compare-dest\fP interpret an absolute path as rooted in
+the module's "path" dir).
+.IP
+When a chroot is in effect \fIand\fP the "name converter" parameter is
 \fInot\fP set, the "numeric ids" parameter will default to being enabled
 (disabling name lookups).  This means that if you manually setup
 name-lookup libraries in your chroot (instead of using a name converter)
@@ -501,7 +536,7 @@ triple-star pattern like "\fB/secret/***\fP".
 .IP
 The "filter" parameter takes a space-separated list of daemon filter rules,
 though it is smart enough to know not to split a token at an internal space
-in a rule (e.g. "\fB\-\ /foo\ \-\ /bar\fP" is parsed as two rules).  You may specify
+in a rule (e.g. "\fB\-\ /foo\ \ \-\ /bar\fP" is parsed as two rules).  You may specify
 one or more merge-file rules using the normal syntax.  Only one "filter"
 parameter can apply to a given module in the config file, so put all the
 rules you want in a single parameter.  Note that per-directory merge-file
@@ -511,8 +546,8 @@ the per-dir merge files are included in the transfer and the client
 requests that they be used.
 .IP "\fBexclude\fP"
 This parameter takes a space-separated list of daemon exclude patterns.  As
-with the client \fB\-\-exclude\fP option, patterns can be qualified with "\fB\-\fP" or
-"\fB+\fP" to explicitly indicate exclude/include.  Only one "exclude" parameter
+with the client \fB\-\-exclude\fP option, patterns can be qualified with "\fB\-\ \fP" or
+"\fB+\ \fP" to explicitly indicate exclude/include.  Only one "exclude" parameter
 can apply to a given module.  See the "filter" parameter for a description
 of how excluded files affect the daemon.
 .IP "\fBinclude\fP"
@@ -634,7 +669,7 @@ passwords.
 There is no default for the "secrets file" parameter, you must choose a
 name (such as \fB/etc/rsyncd.secrets\fP).  The file must normally not be
 readable by "other"; see "strict modes".  If the file is not found or is
-rejected, no logins for a "user auth" module will be possible.
+rejected, no logins for an "auth users" module will be possible.
 .IP "\fBstrict\ modes\fP"
 This parameter determines whether or not the permissions on the secrets
 file will be checked.  If "strict modes" is true, then the secrets file
@@ -667,7 +702,7 @@ addresses which match the masked IP address will be allowed in.
 .IP o
 a hostname pattern using wildcards. If the hostname of the connecting IP
 (as determined by a reverse lookup) matches the wildcarded name (using
-the same rules as normal unix filename matching), the client is allowed
+the same rules as normal Unix filename matching), the client is allowed
 in.  This only works if "reverse lookup" is enabled (the default).
 .IP o
 a hostname. A plain hostname is matched against the reverse DNS of the
@@ -756,7 +791,7 @@ made more human-readable.  The 3 supported levels are the same as for the
 human-readability to be off.  Each added apostrophe increases the level
 (e.g. "\fB%''l\ %'b\ %f\fP").
 .IP
-The default log format is "\fB%o\ %h\ [%a]\ %m\ (%u)\ %f\ %l\fP", and a "\fB%t\ [%p]\fP"
+The default log format is "\fB%o\ %h\ [%a]\ %m\ (%u)\ %f\ %l\fP", and a "\fB%t\ [%p]\ \fP"
 is always prefixed when using the "log file" parameter.  (A perl script
 that will summarize this default log format is included in the rsync source
 code distribution in the "support" subdirectory: rsyncstats.)
@@ -791,7 +826,7 @@ See the \fB\-\-checksum-choice\fP option for a way to choose the algorithm.
 .IP o
 %l the length of the file in bytes
 .IP o
-%L the string "\fB\->\ SYMLINK\fP", "\fB=>\ HARDLINK\fP", or "" (where \fBSYMLINK\fP
+%L the string "\fB\ \->\ SYMLINK\fP", "\fB\ =>\ HARDLINK\fP", or "" (where \fBSYMLINK\fP
 or \fBHARDLINK\fP is a filename)
 .IP o
 %m the module name
@@ -868,7 +903,7 @@ refuse options = * !a !v !compress*
 .RE
 .IP
 Don't worry that the "\fB*\fP" will refuse certain vital options such as
-\fB\-\-dry-run\fP, \fB\-\-server\fP, \fB\-\-no-iconv\fP, \fB\-\-protect-args\fP, etc. These
+\fB\-\-dry-run\fP, \fB\-\-server\fP, \fB\-\-no-iconv\fP, \fB\-\-seclude-args\fP, etc. These
 important options are not matched by wild-card, so they must be overridden
 by their exact name.  For instance, if you're forcing iconv transfers you
 could use something like this:
@@ -910,17 +945,19 @@ refuse options = * !a !delete* delete-after
 .fi
 .RE
 .IP
-A note on refusing "compress"\ \-\- it is better to set the "dont compress"
-daemon parameter to "\fB*\fP" because that disables compression silently
+A note on refusing "compress": it may be better to set the "dont compress"
+daemon parameter to "\fB*\fP" and ensure that \fBRSYNC_COMPRESS_LIST=zlib\fP is set
+in the environment of the daemon in order to disable compression silently
 instead of returning an error that forces the client to remove the \fB\-z\fP
 option.
 .IP
-If you are un-refusing the compress option, you probably want to match
-"\fB!compress*\fP" so that you also accept the \fB\-\-compress-level\fP option.
+If you are un-refusing the compress option, you may want to match
+"\fB!compress*\fP" if you also want to allow the \fB\-\-compress-level\fP option.
 .IP
-Note that the "write-devices" option is refused by default, but can be
-explicitly accepted with "\fB!write-devices\fP".  The options "log-file" and
-"log-file-format" are forcibly refused and cannot be accepted.
+Note that the "copy-devices" & "write-devices" options are refused by
+default, but they can be explicitly accepted with "\fB!copy-devices\fP" and/or
+"\fB!write-devices\fP".  The options "log-file" and "log-file-format" are
+forcibly refused and cannot be accepted.
 .IP
 Here are all the options that are not matched by wild-cards:
 .IP
@@ -939,7 +976,7 @@ compatibility reasons, this options should not be confused with
 .IP o
 \fB\-\-dry-run\fP, \fB\-n\fP: Who would want to disable this?
 .IP o
-\fB\-\-protect-args\fP, \fB\-s\fP: This actually makes transfers safer.
+\fB\-\-seclude-args\fP, \fB\-s\fP: Is the oldest arg-protection method.
 .IP o
 \fB\-\-from0\fP, \fB\-0\fP: Makes it easier to accept/refuse \fB\-\-files-from\fP without
 affecting this helpful modifier.
@@ -953,6 +990,10 @@ affecting this helpful modifier.
 \fB\-\-write-devices\fP: Is non-wild but also auto-disabled.
 .RE
 .IP "\fBdont\ compress\fP"
+\fBNOTE:\fP This parameter currently has no effect except in one instance: if
+it is set to "\fB*\fP" then it minimizes or disables compression for all files
+(for those that don't want to refuse the \fB\-\-compress\fP option completely).
+.IP
 This parameter allows you to select filenames based on wildcard patterns
 that should not be compressed when pulling files from the daemon (no
 analogous parameter exists to govern the pushing of files to a daemon).
@@ -963,14 +1004,14 @@ compressed files.
 The "dont compress" parameter takes a space-separated list of
 case-insensitive wildcard patterns. Any source filename matching one of the
 patterns will be compressed as little as possible during the transfer.  If
-the compression algorithm has an "off" level (such as zlib/zlibx) then no
-compression occurs for those files.  Other algorithms have the level
-minimized to reduces the CPU usage as much as possible.
+the compression algorithm has an "off" level, then no compression occurs
+for those files.  If an algorithms has the ability to change the level in
+mid-stream, it will be minimized to reduce the CPU usage as much as
+possible.
 .IP
 See the \fB\-\-skip-compress\fP parameter in the \fBrsync\fP(1) manpage for the
-list of file suffixes that are not compressed by default.  Specifying a
-value for the "dont compress" parameter changes the default when the daemon
-is the sender.
+list of file suffixes that are skipped by default if this parameter is not
+set.
 .IP "\fBearly\ exec\fP, \fBpre-xfer\ exec\fP, \fBpost-xfer\ exec\fP"
 You may specify a command to be run in the early stages of the connection,
 or right before and/or after the transfer.  If the \fBearly\ exec\fP or
@@ -1127,17 +1168,17 @@ SSL proxy.
 .SH "SSL/TLS Daemon Setup"
 .P
 When setting up an rsync daemon for access via SSL/TLS, you will need to
-configure a proxy (such as haproxy or nginx) as the front-end that handles the
-encryption.
+configure a TCP proxy (such as haproxy or nginx) as the front-end that handles
+the encryption.
 .P
 .IP o
 You should limit the access to the backend-rsyncd port to only allow the
 proxy to connect.  If it is on the same host as the proxy, then configuring
 it to only listen on localhost is a good idea.
 .IP o
-You should consider turning on the \fBproxy\ protocol\fP parameter if your proxy
-supports sending that information.  The examples below assume that this is
-enabled.
+You should consider turning on the \fBproxy\ protocol\fP rsync-daemon parameter if
+your proxy supports sending that information.  The examples below assume that
+this is enabled.
 .P
 An example haproxy setup is as follows:
 .RS 4
@@ -1167,7 +1208,7 @@ stream {
        ssl_certificate_key /etc/letsencrypt/example.com/privkey.pem;
 
        proxy_pass localhost:873;
-       proxy_protocol on; # Requires "proxy protocol = true"
+       proxy_protocol on; # Requires rsyncd.conf "proxy protocol = true"
        proxy_timeout 1m;
        proxy_connect_timeout 5s;
    }
@@ -1175,7 +1216,7 @@ stream {
 .fi
 .RE
 .P
-.SH "EXAMPLES"
+.SH "DAEMON CONFIG EXAMPLES"
 .P
 A simple rsyncd.conf file that allow anonymous rsync to a ftp area at
 \fB/home/ftp\fP would be:
@@ -1247,21 +1288,15 @@ https://rsync.samba.org/.
 .P
 .SH "VERSION"
 .P
-This man page is current for version 3.2.3 of rsync.
+This manpage is current for version 3.2.7 of rsync.
 .P
 .SH "CREDITS"
 .P
-rsync is distributed under the GNU General Public License.  See the file
+Rsync is distributed under the GNU General Public License.  See the file
 COPYING for details.
 .P
-The primary ftp site for rsync is ftp://rsync.samba.org/pub/rsync
-.P
-A web site is available at https://rsync.samba.org/.
-.P
-We would be delighted to hear from you if you like this program.
-.P
-This program uses the zlib compression library written by Jean-loup Gailly and
-Mark Adler.
+An rsync web site is available at https://rsync.samba.org/ and its github
+project is https://github.com/WayneD/rsync.
 .P
 .SH "THANKS"
 .P
@@ -1270,8 +1305,9 @@ Thanks to Karsten Thygesen for his many suggestions and documentation!
 .P
 .SH "AUTHOR"
 .P
-rsync was written by Andrew Tridgell and Paul Mackerras.  Many people have
-later contributed to it.
+Rsync was originally written by Andrew Tridgell and Paul Mackerras.  Many
+people have later contributed to it. It is currently maintained by Wayne
+Davison.
 .P
 Mailing lists for support and development are available at
 https://lists.samba.org/.

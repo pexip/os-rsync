@@ -1,4 +1,4 @@
-rsync (3.2.3-4+deb11u1) bullseye; urgency=medium
+rsync (3.2.3-5) unstable; urgency=medium
 
   The --copy-devices option has been reintroduced, it was previously removed in
   favor of the new one --write-devices, but it turns out they are not equivalent
