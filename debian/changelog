@@ -1,3 +1,9 @@
+rsync (3.2.3-4+deb11u1pexip6) pexip; urgency=medium
+
+  * Merge openssl3 changes to bullseye
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Wed, 25 Jan 2023 15:18:37 +0000
+
 rsync (3.2.3-4+deb11u1pexip5) pexip-bullseye-openssl3; urgency=medium
 
   * Drop OpenSSL support
