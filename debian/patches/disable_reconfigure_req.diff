@@ -5,11 +5,11 @@ Index: rsync/Makefile.in
 ===================================================================
 --- rsync.orig/Makefile.in
 +++ rsync/Makefile.in
-@@ -193,15 +193,6 @@ configure.sh config.h.in: configure.ac a
+@@ -210,15 +210,6 @@ configure.sh config.h.in: configure.ac a
  	else \
  	    echo "config.h.in has CHANGED."; \
  	fi
--	@if test -f configure.sh.old -o -f config.h.in.old; then \
+-	@if test -f configure.sh.old || test -f config.h.in.old; then \
 -	    if test "$(MAKECMDGOALS)" = reconfigure; then \
 -		echo 'Continuing with "make reconfigure".'; \
 -	    else \
@@ -21,7 +21,7 @@ Index: rsync/Makefile.in
  
  .PHONY: reconfigure
  reconfigure: configure.sh
-@@ -215,17 +206,6 @@ restatus:
+@@ -232,17 +223,6 @@ restatus:
  Makefile: Makefile.in config.status configure.sh config.h.in
  	@if test -f Makefile; then cp -p Makefile Makefile.old; else touch Makefile.old; fi
  	@./config.status

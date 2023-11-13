@@ -61,26 +61,6 @@ Index: rsync/support/mnt-excl
  # This script takes a command-line arg of a source directory
  # that will be passed to rsync, and generates a set of excludes
  # that will exclude all mount points from the list.  This is
-Index: rsync/support/munge-symlinks
-===================================================================
---- rsync.orig/support/munge-symlinks
-+++ rsync/support/munge-symlinks
-@@ -1,4 +1,4 @@
--#!/usr/bin/env perl
-+#!/usr/bin/perl
- # This script will either prefix all symlink values with the string
- # "/rsyncd-munged/" or remove that prefix.
- 
-Index: rsync/support/rrsync
-===================================================================
---- rsync.orig/support/rrsync
-+++ rsync/support/rrsync
-@@ -1,4 +1,4 @@
--#!/usr/bin/env perl
-+#!/usr/bin/perl
- # Name: /usr/local/bin/rrsync (should also have a symlink in /usr/bin)
- # Purpose: Restricts rsync to subdirectory declared in .ssh/authorized_keys
- # Author: Joe Smith <js-cgi@inwap.com> 30-Sep-2004
 Index: rsync/support/rsyncstats
 ===================================================================
 --- rsync.orig/support/rsyncstats
@@ -91,23 +71,3 @@ Index: rsync/support/rsyncstats
  #
  # This script parses the default logfile format produced by rsync when running
  # as a daemon with transfer logging enabled.  It also parses a slightly tweaked
-Index: rsync/packaging/cull_options
-===================================================================
---- rsync.orig/packaging/cull_options
-+++ rsync/packaging/cull_options
-@@ -1,4 +1,4 @@
--#!/usr/bin/env perl
-+#!/usr/bin/perl
- # This script outputs some perl code that parses all possible options
- # that the code in options.c might send to the server.  This perl code
- # is included in the rrsync script.
-Index: rsync/support/atomic-rsync
-===================================================================
---- rsync.orig/support/atomic-rsync
-+++ rsync/support/atomic-rsync
-@@ -1,4 +1,4 @@
--#!/usr/bin/env perl
-+#!/usr/bin/perl
- #
- # This script lets you update a hierarchy of files in an atomic way by
- # first creating a new hierarchy using rsync's --link-dest option, and

@@ -1,12 +1,6 @@
 disable_reconfigure_req.diff
 skip_devices_test.patch
 perl_shebang.patch
-CVE-2020-14387.patch
-fix_ftcbfs_configure.patch
-fix_delay_updates.patch
-copy-devices.diff
-manpage_upstream_fixes.patch
-fix_mkpath.patch
-fix_sparse_inplace.patch
-update_rrsync_options.patch
-fix_rsync-ssl_RSYNC_SSL_CERT_feature.patch
+fix_rrsync_man_generation.patch
+avoid_quoting_of_tilde_when_its_a_destination_arg.patch
+trust_the_sender_on_a_local_transfer.patch
