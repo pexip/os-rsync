@@ -1,11 +1,19 @@
-Description: Remove need to run reconfigure target
-Author: Samuel Henrique <samueloph@debian.org>
+From: Samuel Henrique <samueloph@debian.org>
+Date: Fri, 12 Apr 2024 00:11:07 +0100
+Subject: Remove need to run reconfigure target
+
 Forwarded: not-needed
-Index: rsync/Makefile.in
+
 ===================================================================
---- rsync.orig/Makefile.in
-+++ rsync/Makefile.in
-@@ -210,15 +210,6 @@ configure.sh config.h.in: configure.ac a
+---
+ Makefile.in | 20 --------------------
+ 1 file changed, 20 deletions(-)
+
+diff --git a/Makefile.in b/Makefile.in
+index 7c75c26..96d7d3a 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -204,15 +204,6 @@ configure.sh config.h.in: configure.ac aclocal.m4
  	else \
  	    echo "config.h.in has CHANGED."; \
  	fi
@@ -21,7 +29,7 @@ Index: rsync/Makefile.in
  
  .PHONY: reconfigure
  reconfigure: configure.sh
-@@ -232,17 +223,6 @@ restatus:
+@@ -226,17 +217,6 @@ restatus:
  Makefile: Makefile.in config.status configure.sh config.h.in
  	@if test -f Makefile; then cp -p Makefile Makefile.old; else touch Makefile.old; fi
  	@./config.status

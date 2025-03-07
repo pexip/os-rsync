@@ -1,14 +1,21 @@
-Description: Fix manpage installation for rrsync
- Otherwise we would get "ERROR: support/rrsync.1 cannot be created."
- I'm not confident this is the best approach on solving this issue,
- but I know this works with no regressions.
- This patch needs to be reviewed before being submitted to upstream.
-Author: Samuel Henrique <samueloph@debian.org>
-Index: rsync/maybe-make-man
+From: Samuel Henrique <samueloph@debian.org>
+Date: Fri, 12 Apr 2024 00:11:07 +0100
+Subject: Fix manpage installation for rrsync
+
+Otherwise we would get "ERROR: support/rrsync.1 cannot be created."
+I'm not confident this is the best approach on solving this issue,
+but I know this works with no regressions.
+This patch needs to be reviewed before being submitted to upstream.
 ===================================================================
---- rsync.orig/maybe-make-man
-+++ rsync/maybe-make-man
-@@ -22,12 +22,8 @@ if [ ! -f "$flagfile" ]; then
+---
+ maybe-make-man | 8 ++------
+ 1 file changed, 2 insertions(+), 6 deletions(-)
+
+diff --git a/maybe-make-man b/maybe-make-man
+index c7af739..d0b9660 100755
+--- a/maybe-make-man
++++ b/maybe-make-man
+@@ -23,12 +23,8 @@ if [ ! -f "$flagfile" ]; then
  	    cp -p "$srcdir/$outname" .
  	    exit 0
  	else
