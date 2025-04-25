@@ -7706,7 +7706,7 @@ else $as_nop
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-main()
+int main()
 {
    if (socket(AF_INET6, SOCK_STREAM, 0) < 0)
      exit(1);
@@ -7758,6 +7758,75 @@ printf "%s\n" "#define SHUTDOWN_ALL_SOCKETS 1" >>confdefs.h
 printf "%s\n" "no" >&6; };;
 esac
 
+# We default to using our zlib unless --with-included-zlib=no is given.
+if test x"$with_included_zlib" != x"no"; then
+    with_included_zlib=yes
+elif test x"$ac_cv_header_zlib_h" != x"yes"; then
+    with_included_zlib=yes
+fi
+if test x"$with_included_zlib" != x"yes"; then
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for deflateParams in -lz" >&5
+printf %s "checking for deflateParams in -lz... " >&6; }
+if test ${ac_cv_lib_z_deflateParams+y}
+then :
+  printf %s "(cached) " >&6
+else $as_nop
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lz  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+char deflateParams ();
+int
+main (void)
+{
+return deflateParams ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_lib_z_deflateParams=yes
+else $as_nop
+  ac_cv_lib_z_deflateParams=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_z_deflateParams" >&5
+printf "%s\n" "$ac_cv_lib_z_deflateParams" >&6; }
+if test "x$ac_cv_lib_z_deflateParams" = xyes
+then :
+  printf "%s\n" "#define HAVE_LIBZ 1" >>confdefs.h
+
+  LIBS="-lz $LIBS"
+
+else $as_nop
+  with_included_zlib=yes
+fi
+
+fi
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to use included zlib" >&5
+printf %s "checking whether to use included zlib... " >&6; }
+if test x"$with_included_zlib" = x"yes"; then
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $srcdir/zlib" >&5
+printf "%s\n" "$srcdir/zlib" >&6; }
+    BUILD_ZLIB='$(zlib_OBJS)'
+    CFLAGS="-I$srcdir/zlib $CFLAGS"
+else
+
+printf "%s\n" "#define EXTERNAL_ZLIB 1" >>confdefs.h
+
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; }
+fi
+
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to enable use of openssl crypto library" >&5
 printf %s "checking whether to enable use of openssl crypto library... " >&6; }
 # Check whether --enable-openssl was given.
@@ -7771,9 +7840,9 @@ if test x"$enable_openssl" != x"no"; then
     if test x"$ac_cv_header_openssl_md4_h" = x"yes" && test x"$ac_cv_header_openssl_md5_h" = x"yes"; then
       { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 printf "%s\n" "yes" >&6; }
-      { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing MD5_Init" >&5
-printf %s "checking for library containing MD5_Init... " >&6; }
-if test ${ac_cv_search_MD5_Init+y}
+      { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing EVP_MD_CTX_copy" >&5
+printf %s "checking for library containing EVP_MD_CTX_copy... " >&6; }
+if test ${ac_cv_search_EVP_MD_CTX_copy+y}
 then :
   printf %s "(cached) " >&6
 else $as_nop
@@ -7784,11 +7853,11 @@ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* Override any GCC internal prototype to avoid an error.
    Use char because int might match the return type of a GCC
    builtin and then its argument prototype would still apply.  */
-char MD5_Init ();
+char EVP_MD_CTX_copy ();
 int
 main (void)
 {
-return MD5_Init ();
+return EVP_MD_CTX_copy ();
   ;
   return 0;
 }
@@ -7803,27 +7872,27 @@ do
   fi
   if ac_fn_c_try_link "$LINENO"
 then :
-  ac_cv_search_MD5_Init=$ac_res
+  ac_cv_search_EVP_MD_CTX_copy=$ac_res
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext
-  if test ${ac_cv_search_MD5_Init+y}
+  if test ${ac_cv_search_EVP_MD_CTX_copy+y}
 then :
   break
 fi
 done
-if test ${ac_cv_search_MD5_Init+y}
+if test ${ac_cv_search_EVP_MD_CTX_copy+y}
 then :
 
 else $as_nop
-  ac_cv_search_MD5_Init=no
+  ac_cv_search_EVP_MD_CTX_copy=no
 fi
 rm conftest.$ac_ext
 LIBS=$ac_func_search_save_LIBS
 fi
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_MD5_Init" >&5
-printf "%s\n" "$ac_cv_search_MD5_Init" >&6; }
-ac_res=$ac_cv_search_MD5_Init
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_EVP_MD_CTX_copy" >&5
+printf "%s\n" "$ac_cv_search_EVP_MD_CTX_copy" >&6; }
+ac_res=$ac_cv_search_EVP_MD_CTX_copy
 if test "$ac_res" != no
 then :
   test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
@@ -7831,7 +7900,7 @@ then :
 
 	   enable_openssl=yes
 else $as_nop
-  err_msg="$err_msg$nl- Failed to find MD5_Init function in openssl crypto lib.";
+  err_msg="$err_msg$nl- Failed to find EVP_MD_CTX_copy function in openssl crypto lib.";
 	   no_lib="$no_lib openssl"
 fi
 
@@ -8190,7 +8259,7 @@ if test x"$no_lib" != x; then
     echo ""
     echo "See the INSTALL file for hints on how to install the missing libraries and/or"
     echo "how to generate (or fetch) manpages:"
-    echo "    https://github.com/WayneD/rsync/blob/master/INSTALL.md"
+    echo "    https://github.com/RsyncProject/rsync/blob/master/INSTALL.md"
     echo ""
     echo "To disable one or more features, the relevant configure options are:"
     for lib in $no_lib; do
@@ -10453,6 +10522,12 @@ then :
   printf "%s\n" "#define HAVE_STRLCPY 1" >>confdefs.h
 
 fi
+ac_fn_c_check_func "$LINENO" "stpcpy" "ac_cv_func_stpcpy"
+if test "x$ac_cv_func_stpcpy" = xyes
+then :
+  printf "%s\n" "#define HAVE_STPCPY 1" >>confdefs.h
+
+fi
 ac_fn_c_check_func "$LINENO" "strtol" "ac_cv_func_strtol"
 if test "x$ac_cv_func_strtol" = xyes
 then :
@@ -11203,6 +11278,12 @@ if test x"$with_included_popt" = x"yes"; then
 printf "%s\n" "$srcdir/popt" >&6; }
     BUILD_POPT='$(popt_OBJS)'
     CFLAGS="-I$srcdir/popt $CFLAGS"
+
+printf "%s\n" "#define POPT_SYSCONFDIR \"/etc\"" >>confdefs.h
+
+
+printf "%s\n" "#define PACKAGE \"rsync\"" >>confdefs.h
+
     if test x"$ALLOCA" != x
     then
 	# this can be removed when/if we add an included alloca.c;
@@ -11211,75 +11292,6 @@ printf "%s\n" "$srcdir/popt" >&6; }
 printf "%s\n" "$as_me: WARNING: included libpopt will use malloc, not alloca (which wastes a small amount of memory)" >&2;}
     fi
 else
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
-printf "%s\n" "no" >&6; }
-fi
-
-# We default to using our zlib unless --with-included-zlib=no is given.
-if test x"$with_included_zlib" != x"no"; then
-    with_included_zlib=yes
-elif test x"$ac_cv_header_zlib_h" != x"yes"; then
-    with_included_zlib=yes
-fi
-if test x"$with_included_zlib" != x"yes"; then
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for deflateParams in -lz" >&5
-printf %s "checking for deflateParams in -lz... " >&6; }
-if test ${ac_cv_lib_z_deflateParams+y}
-then :
-  printf %s "(cached) " >&6
-else $as_nop
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lz  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-char deflateParams ();
-int
-main (void)
-{
-return deflateParams ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"
-then :
-  ac_cv_lib_z_deflateParams=yes
-else $as_nop
-  ac_cv_lib_z_deflateParams=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_z_deflateParams" >&5
-printf "%s\n" "$ac_cv_lib_z_deflateParams" >&6; }
-if test "x$ac_cv_lib_z_deflateParams" = xyes
-then :
-  printf "%s\n" "#define HAVE_LIBZ 1" >>confdefs.h
-
-  LIBS="-lz $LIBS"
-
-else $as_nop
-  with_included_zlib=yes
-fi
-
-fi
-
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to use included zlib" >&5
-printf %s "checking whether to use included zlib... " >&6; }
-if test x"$with_included_zlib" = x"yes"; then
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $srcdir/zlib" >&5
-printf "%s\n" "$srcdir/zlib" >&6; }
-    BUILD_ZLIB='$(zlib_OBJS)'
-    CFLAGS="-I$srcdir/zlib $CFLAGS"
-else
-
-printf "%s\n" "#define EXTERNAL_ZLIB 1" >>confdefs.h
-
     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
 printf "%s\n" "no" >&6; }
 fi
