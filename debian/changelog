@@ -1,3 +1,116 @@
+rsync (3.4.1+ds1-3) unstable; urgency=medium
+
+  * Team upload.
+  * python3-cmarkgfm is currently broken for hppa architecture
+
+ -- Arnaud Rebillout <arnaudr@kali.org>  Fri, 07 Mar 2025 17:59:15 +0700
+
+rsync (3.4.1+ds1-2) unstable; urgency=medium
+
+  * Team upload.
+  * Update skip_devices_test patch to be non-linux
+  * Add patch to fix flaky hardlinks test
+  * d/watch: Drop filenamemangle and uversionmangle, simplify dversionmangle
+
+ -- Arnaud Rebillout <arnaudr@kali.org>  Thu, 06 Mar 2025 14:10:57 +0700
+
+rsync (3.4.1+ds1-1) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Samuel Henrique ]
+  * Swap Maintainer with Uploaders, so samueloph can get email notifications
+
+  [ Arnaud Rebillout ]
+  * d/watch: Adjust url to point to the src dir with all the releases
+  * Update upstream signing key, metadata and email address
+  * New upstream version 3.4.1+ds1 (Closes: #1093081)
+  * Drop patches applied upstream
+  * Update shebang patch
+
+ -- Arnaud Rebillout <arnaudr@kali.org>  Wed, 05 Mar 2025 09:02:19 +0700
+
+rsync (3.3.0+ds1-4) unstable; urgency=critical
+
+  [ Salvatore Bonaccorso ]
+  * Fix FLAG_GOT_DIR_FLIST collission with FLAG_HLINKED
+    (Closes: #1093089, #1093052)
+
+  [ Samuel Henrique ]
+  * d/p/Fix_use-after-free_in_generator: New patch to fix UAF
+
+ -- Samuel Henrique <samueloph@debian.org>  Wed, 15 Jan 2025 18:34:49 +0000
+
+rsync (3.3.0+ds1-3) unstable; urgency=critical
+
+  * Import upstream patches for CVE-2024-12084, CVE-2024-12085,
+    CVE-2024-12086, CVE-2024-12087, CVE-2024-12088, CVE-2024-12747
+     - d/p/rsync-upstream-CVE-patches-v3/CVE-2024-12084
+       ~ 0001-Some-checksum-buffer-fixes.patch
+       ~ 0002-Another-cast-when-multiplying-integers.patch
+     - d/p/rsync-upstream-CVE-patches-v3/CVE-2024-12085
+       ~ 0001-prevent-information-leak-off-the-stack.patch
+     - d/p/rsync-upstream-CVE-patches-v3/CVE-2024-12086
+       ~ 0001-refuse-fuzzy-options-when-fuzzy-not-selected.patch
+       ~ 0002-added-secure_relative_open.patch
+       ~ 0003-receiver-use-secure_relative_open-for-basis-file.patch
+       ~ 0004-disallow-.-elements-in-relpath-for-secure_relative_o.patch
+     - d/p/rsync-upstream-CVE-patches-v3/CVE-2024-12087
+       ~ 0001-Refuse-a-duplicate-dirlist.patch
+       ~ 0002-range-check-dir_ndx-before-use.patch
+     - d/p/rsync-upstream-CVE-patches-v3/CVE-2024-12088
+       ~ 0001-make-safe-links-stricter.patch
+     - d/p/rsync-upstream-CVE-patches-v3/CVE-2024-12747
+       ~ 0001-fixed-symlink-race-condition-in-sender.patch
+     - d/p/rsync-upstream-CVE-patches-v3/version_update
+       ~ 0001-raise-protocol-version-to-32.patch
+       ~ 0002-change-version-to-3.4.0.patch
+       ~ 0003-update-NEWS-for-3.4.0.patch
+
+ -- Samuel Henrique <samueloph@debian.org>  Sun, 12 Jan 2025 15:40:14 +0000
+
+rsync (3.3.0+ds1-2) unstable; urgency=medium
+
+  * d/watch: Set repacksuffix to +ds1 to fix salsa CI
+  * d/p/configure_ac...: New patch to fix IPv6 support, thanks to Simon
+    Ruderich for the bug report (closes: #1090328)
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 17 Dec 2024 18:56:13 +0000
+
+rsync (3.3.0+ds1-1) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Samuel Henrique ]
+  * New upstream version 3.3.0+ds
+    - Repack to remove the zlib bundled library
+
+  [ Matheus Polkorny ]
+  * New upstream version 3.3.0+ds1
+    - Repack to remove the popt bundled library
+  * d/copyright: Update to comply with 1.0 format and exclude popt/*
+  * d/gbp.conf: Remove export-dir configuration
+  * d/rules: fix build failure due to missing zlib/dummy.in and popt/dummy.in
+  * d/t/upstream-tests: Run d/rules override_dh_auto_configure during setup
+  * d/watch: add +ds suffix to version
+
+ -- Matheus Polkorny <mpolkorny@gmail.com>  Sat, 07 Dec 2024 20:54:11 -0300
+
+rsync (3.3.0-1) unstable; urgency=medium
+
+  [ Aquila Macedo Costa ]
+  * d/control: Bump Standards-Version to 4.6.2
+
+  [ Samuel Henrique ]
+  * New upstream version 3.3.0 (closes: #1068630)
+  * Bump Standards-Version to 4.7.0
+  * Update patches
+  * d/patches: Drop merged patches
+  * d/control: Drop dependency on lsb-base
+  * d/rsync.lintian-overrides: Update overrides
+
+ -- Samuel Henrique <samueloph@debian.org>  Fri, 12 Apr 2024 00:28:29 +0100
+
 rsync (3.2.7-1+pexip24u4+deb12u2) pexip; urgency=medium
 
   * New upstream release with security fixes

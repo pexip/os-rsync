@@ -14,7 +14,13 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 # CET-incompatible.
 # Don't use bundled zlib (with-included-zlib=no).
 override_dh_auto_configure:
+	mkdir -p zlib popt
+	touch zlib/dummy.in
+	touch popt/dummy.in
 	dh_auto_configure -- --with-included-zlib=no --disable-md5-asm --with-rrsync
+
+execute_before_dh_auto_clean:
+	rm -rf zlib popt
 
 override_dh_installsystemd:
 	dh_installsystemd --no-enable

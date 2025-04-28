@@ -12,6 +12,6 @@
 # PARTICULAR PURPOSE.
 
 m4_ifndef([AC_CONFIG_MACRO_DIRS], [m4_defun([_AM_CONFIG_MACRO_DIRS], [])m4_defun([AC_CONFIG_MACRO_DIRS], [_AM_CONFIG_MACRO_DIRS($@)])])
-m4_include([../m4/have_type.m4])
-m4_include([../m4/header_major_fixed.m4])
-m4_include([../m4/socklen_t.m4])
+m4_include([m4/have_type.m4])
+m4_include([m4/header_major_fixed.m4])
+m4_include([m4/socklen_t.m4])

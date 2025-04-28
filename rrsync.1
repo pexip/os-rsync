@@ -1,4 +1,4 @@
-.TH "rrsync" "1" "20 Oct 2022" "rrsync from rsync 3.2.7" "User Commands"
+.TH "rrsync" "1" "15 Jan 2025" "rrsync from rsync 3.4.1" "User Commands"
 .\" prefix=/usr
 .P
 .SH "NAME"
@@ -8,14 +8,16 @@ rrsync \- a script to setup restricted rsync users via ssh logins
 .SH "SYNOPSIS"
 .P
 .nf
-rrsync [-ro|-rw] [-munge] [-no-del] [-no-lock] DIR
+rrsync [-ro|-wo] [-munge] [-no-del] [-no-lock] [-no-overwrite]  DIR
 .fi
 .P
 The single non-option argument specifies the restricted \fIDIR\fP to use. It can be
 relative to the user's home directory or an absolute path.
 .P
 The online version of this manpage (that includes cross-linking of topics)
-is available at https://download.samba.org/pub/rsync/rrsync.1.
+is available at
+.UR https://download.samba.org/pub/rsync/rrsync.1
+.UE .
 .P
 .SH "DESCRIPTION"
 .P
@@ -84,6 +86,9 @@ Enable rsync's \fB\-\-munge-links\fP on the server side.
 Disable rsync's \fB\-\-delete*\fP and \fB\-\-remove*\fP options.
 .IP "\fB\-no-lock\fP"
 Avoid the single-run (per-user) lock check.  Useful with \fB\-munge\fP.
+.IP "\fB\-no-overwrite\fP"
+Enforce \fB\-\-ignore-existing\fP on the server. Prevents overwriting existing
+files when the server is the receiver.
 .IP "\fB\-help\fP, \fB\-h\fP"
 Output this help message and exit.
 .P
@@ -150,15 +155,20 @@ command="rrsync -ro results" ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAIEAmk...
 .P
 .SH "VERSION"
 .P
-This manpage is current for version 3.2.7 of rsync.
+This manpage is current for version 3.4.1 of rsync.
 .P
 .SH "CREDITS"
 .P
 rsync is distributed under the GNU General Public License.  See the file
 COPYING for details.
 .P
-An rsync web site is available at https://rsync.samba.org/ and its github
-project is https://github.com/WayneD/rsync.
+An rsync web site is available at
+.UR https://rsync.samba.org/
+.UE
+and its github
+project is
+.UR https://github.com/RsyncProject/rsync
+.UE .
 .P
 .SH "AUTHOR"
 .P
