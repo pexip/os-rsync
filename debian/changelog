@@ -1,3 +1,9 @@
+rsync (3.4.1+ds1-3+pexip25u1) pexip-trixie; urgency=medium
+
+  * Initial trixie build
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Tue, 29 Apr 2025 22:57:50 +0100
+
 rsync (3.4.1+ds1-3) unstable; urgency=medium
 
   * Team upload.
