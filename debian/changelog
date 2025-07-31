@@ -1,3 +1,42 @@
+rsync (3.4.1+ds1-5) unstable; urgency=medium
+
+  * Team upload.
+  * d/tests/local-tests: beautify test script
+  * d/tests: run rsync tests over ssh
+  * d/tests/local-tests: add test for --exclude flag
+  * d/copyright: add contributor
+
+ -- Alex <alex@puer-robustus.eu>  Sat, 26 Jul 2025 11:26:07 +0200
+
+rsync (3.4.1+ds1-5~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * d/tests: add Debian-specific local rsync tests
+
+ -- Alex <alex@puer-robustus.eu>  Thu, 03 Jul 2025 22:28:36 +0200
+
+rsync (3.4.1+ds1-4) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Samuel Henrique <samueloph@debian.org>  Mon, 09 Jun 2025 19:41:23 +0100
+
+rsync (3.4.1+ds1-4~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * d/control: Add acl and attr packages to Build-Depends
+  * d/tests: Add "upstream-tests-as-root" test with needs-root restriction
+
+ -- Alex <alex@puer-robustus.eu>  Fri, 06 Jun 2025 16:40:59 +0200
+
+rsync (3.4.1+ds1-4~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * docs(debian/copyright): consistently point to GNU licenses website
+  * d/tests: add superficial test for "rsync -h"
+
+ -- Alex <alex@puer-robustus.eu>  Wed, 04 Jun 2025 21:46:47 +0200
+
 rsync (3.4.1+ds1-3+pexip25u1) pexip-trixie; urgency=medium
 
   * Initial trixie build
