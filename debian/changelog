@@ -1,3 +1,9 @@
+rsync (3.4.1+ds1-5+pexip25u1) pexip-trixie; urgency=medium
+
+  * New upstream release
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 31 Jul 2025 15:05:26 +0100
+
 rsync (3.4.1+ds1-5) unstable; urgency=medium
 
   * Team upload.
