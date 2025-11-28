@@ -19,3 +19,4 @@ raise-protocol-version-to-32.patch
 # Regression from CVE-2024-12087 (#1093052)
 Fix-FLAG_GOT_DIR_FLIST-collission-with-FLAG_HLINKED.patch
 Fix_use-after-free_in_generator.patch
+CVE-2025-10158.patch

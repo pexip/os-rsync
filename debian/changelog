@@ -1,3 +1,27 @@
+rsync (3.2.7-1+deb12u4) bookworm; urgency=medium
+
+  * Team upload.
+  * d/p/CVE-2025-10158.patch: Import upstream patch to fix CVE-2025-10158
+
+    A malicious client acting as the receiver of an rsync file transfer
+    can trigger an out of bounds read of a heap based buffer,
+    via a negative array index.
+
+ -- Matheus Polkorny <mpolkorny@gmail.com>  Thu, 27 Nov 2025 21:49:27 -0300
+
+rsync (3.2.7-1+deb12u3) bookworm; urgency=medium
+
+  * Team upload.
+  * d/control: Add B-D acl and attr, used for tests-only, no impact to
+    resulting binaries
+  * d/tests: New tests:
+    - rsync-help: Superficial test for "-h"
+    - local-tests: End-to-end tests with local transfers
+    - remote-tests: End-to-end tests through ssh
+    - upstream-tests-as-root: Upstream unit tests, run as root
+
+ -- Alex <alex@puer-robustus.eu>  Sun, 27 Jul 2025 16:12:57 +0200
+
 rsync (3.2.7-1+deb12u2) bookworm-security; urgency=high
 
   [ Salvatore Bonaccorso ]
