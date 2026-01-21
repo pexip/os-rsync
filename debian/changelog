@@ -10,6 +10,17 @@ rsync (3.4.1+ds1-5+pexip25u1) pexip-trixie; urgency=medium
 
  -- Mark Hymers <mark.hymers@pexip.com>  Thu, 31 Jul 2025 15:05:26 +0100
 
+rsync (3.4.1+ds1-5+deb13u1) trixie; urgency=medium
+
+  * Team upload.
+  * d/p/CVE-2025-10158.patch: Import upstream patch to fix CVE-2025-10158
+
+    A malicious client acting as the receiver of an rsync file transfer
+    can trigger an out of bounds read of a heap based buffer,
+    via a negative array index.
+
+ -- Matheus Polkorny <mpolkorny@gmail.com>  Thu, 27 Nov 2025 21:29:04 -0300
+
 rsync (3.4.1+ds1-5) unstable; urgency=medium
 
   * Team upload.
