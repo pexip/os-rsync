@@ -4,3 +4,5 @@ env_shebang.patch
 fix_rrsync_man_generation.patch
 fix-flaky-hardlinks-test.patch
 CVE-2025-10158.patch
+syscall_use_openat2_RESOLVE_BENEATH_on_Linux_for_secure_relative_open.patch
+CVE-2026-41035.patch
