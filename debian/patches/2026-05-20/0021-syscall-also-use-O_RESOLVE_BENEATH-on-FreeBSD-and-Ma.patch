@@ -1,0 +1,96 @@
+From b32ba3ddb3736114887a452f8a89e33fe8e5dda8 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Thu, 30 Apr 2026 08:44:11 +1000
+Subject: [PATCH 21/38] syscall: also use O_RESOLVE_BENEATH on FreeBSD and
+ MacOS
+
+FreeBSD and MacOS have O_RESOLVE_BENEATH as an openat() flag with the same
+"must not escape dirfd" semantics as Linux's RESOLVE_BENEATH. The
+kernel rejects ".." escapes, absolute symlinks, and symlinks whose
+target lies outside dirfd, while still following symlinks that
+resolve within it -- the same trade-off that fixes issue #715 on
+Linux.
+
+Add a parallel BSD path in secure_relative_open(), gated on
+declared. Unlike Linux, BSD doesn't have the header/runtime split
+where the symbol can exist without kernel support, so no runtime
+fallback is needed: if the flag compiles in, the kernel honours it.
+
+OpenBSD and NetBSD have no equivalent kernel primitive and continue
+to use the existing per-component O_NOFOLLOW walk; issue #715
+remains visible on those platforms (a userland resolver or
+unveil(2)-based fence would be follow-up work).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ syscall.c | 40 +++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 37 insertions(+), 3 deletions(-)
+
+diff --git a/syscall.c b/syscall.c
+index 0881c7ab..045c6ce3 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -729,9 +729,13 @@ int do_open_nofollow(const char *pathname, int flags)
+   versions rejected every symlink with O_NOFOLLOW on each component,
+   which broke legitimate directory symlinks on the receiver side
+   (https://github.com/RsyncProject/rsync/issues/715). The escape
+-  prevention is handled by the kernel via openat2(RESOLVE_BENEATH)
+-  on Linux 5.6+; older systems fall back to the per-component
+-  O_NOFOLLOW walk below.
++  prevention is handled by:
++    Linux 5.6+:                openat2(RESOLVE_BENEATH)
++    FreeBSD 13+:               openat() with O_RESOLVE_BENEATH
++    macOS 15+ / iOS 18+:       openat() with O_RESOLVE_BENEATH (same
++                               flag name, picked up by the same #ifdef;
++                               flag value differs from FreeBSD)
++  Other systems fall back to the per-component O_NOFOLLOW walk below.
+ 
+   The relpath must also not contain any ../ elements in the path.
+ */
+@@ -763,6 +767,32 @@ static int secure_relative_open_linux(const char *basedir, const char *relpath,
+ }
+ #endif
+ 
++#ifdef O_RESOLVE_BENEATH
++/* FreeBSD 13+ and macOS 15+ (Sequoia) / iOS 18+: O_RESOLVE_BENEATH is
++ * an openat() flag with the same "must not escape dirfd" semantics as
++ * Linux's RESOLVE_BENEATH. The kernel rejects ".." escapes, absolute
++ * symlinks, and symlinks whose target lies outside dirfd. (FreeBSD and
++ * Apple use different flag bit values, but the same symbolic name.) */
++static int secure_relative_open_resolve_beneath(const char *basedir, const char *relpath, int flags, mode_t mode)
++{
++	int dirfd, retfd;
++
++	if (basedir == NULL) {
++		dirfd = AT_FDCWD;
++	} else {
++		dirfd = openat(AT_FDCWD, basedir, O_RDONLY | O_DIRECTORY);
++		if (dirfd == -1)
++			return -1;
++	}
++
++	retfd = openat(dirfd, relpath, flags | O_RESOLVE_BENEATH, mode);
++
++	if (dirfd != AT_FDCWD)
++		close(dirfd);
++	return retfd;
++}
++#endif
++
+ int secure_relative_open(const char *basedir, const char *relpath, int flags, mode_t mode)
+ {
+ 	if (!relpath || relpath[0] == '/') {
+@@ -786,6 +816,10 @@ int secure_relative_open(const char *basedir, const char *relpath, int flags, mo
+ 	}
+ #endif
+ 
++#ifdef O_RESOLVE_BENEATH
++	return secure_relative_open_resolve_beneath(basedir, relpath, flags, mode);
++#endif
++
+ #if !defined(O_NOFOLLOW) || !defined(O_DIRECTORY) || !defined(AT_FDCWD)
+ 	// really old system, all we can do is live with the risks
+ 	if (!basedir) {
+-- 
+2.51.0
+

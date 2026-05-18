@@ -1,0 +1,38 @@
+From c35df318adc2429ca0b2b34c75eae02f29e8edcc Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Thu, 16 Apr 2026 10:50:49 +1000
+Subject: [PATCH 15/38] fix signed integer overflow in proxy protocol v2 header
+ parsing
+
+The len field in the proxy v2 header was declared as signed char,
+allowing a negative size to bypass the validation check and cause
+a stack buffer overflow when passed to read_buf() as size_t.
+
+This bug was reported by John Walker from ZeroPath, many thanks for
+the clear report!
+
+With the current code this bug does not represent a security issue as
+it only results in the exit of the forked process that is specific to
+the attached client, so it is equivalent to the client closing the
+socket, so no CVE for this, but it is good to fix it to prevent a
+future issue.
+---
+ clientname.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/clientname.c b/clientname.c
+index ea94894b..dbac38b9 100644
+--- a/clientname.c
++++ b/clientname.c
+@@ -167,7 +167,7 @@ int read_proxy_protocol_header(int fd)
+ 			char sig[PROXY_V2_SIG_SIZE];
+ 			char ver_cmd;
+ 			char fam;
+-			char len[2];
++			unsigned char len[2];
+ 			union {
+ 				struct {
+ 					char src_addr[4];
+-- 
+2.51.0
+

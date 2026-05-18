@@ -1,0 +1,54 @@
+From ca987c47fb9dcef471ba43132b1ca3ee5ed5a6cd Mon Sep 17 00:00:00 2001
+From: Eli Schwartz <eschwartz@gentoo.org>
+Date: Tue, 22 Apr 2025 16:17:55 -0400
+Subject: [PATCH 05/38] configure.ac: check for xattr support both in libc and
+ in -lattr
+
+In 2015, the attr/xattr.h header was fully removed from upstream attr.
+
+In 2020, rsync started preferring the standard header, if it exists:
+https://github.com/RsyncProject/rsync/pull/22
+
+But the fix was incomplete. We still looked for the getxattr function in
+-lattr, and used it if -lattr exists. This was the case even if the
+system libc was sufficient to provide the needed functions. Result:
+overlinking to -lattr, if it happened to be installed for any other
+reason.
+
+```
+checking whether to support extended attributes... Using Linux xattrs
+checking for getxattr in -lattr... yes
+```
+
+Instead, use a different autoconf macro that first checks if the
+function is available for use without any libraries (e.g. it is in
+libc).
+
+Result:
+
+```
+checking whether to support extended attributes... Using Linux xattrs
+checking for library containing getxattr... none required
+```
+
+Signed-off-by: Eli Schwartz <eschwartz@gentoo.org>
+---
+ configure.ac | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/configure.ac b/configure.ac
+index d2bcb471..4062651d 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1392,7 +1392,7 @@ else
+ 	AC_DEFINE(HAVE_LINUX_XATTRS, 1, [True if you have Linux xattrs (or equivalent)])
+ 	AC_DEFINE(SUPPORT_XATTRS, 1)
+ 	AC_DEFINE(NO_SYMLINK_USER_XATTRS, 1, [True if symlinks do not support user xattrs])
+-	AC_CHECK_LIB(attr,getxattr)
++	AC_SEARCH_LIBS(getxattr,attr)
+ 	;;
+     darwin*)
+ 	AC_MSG_RESULT(Using OS X xattrs)
+-- 
+2.51.0
+

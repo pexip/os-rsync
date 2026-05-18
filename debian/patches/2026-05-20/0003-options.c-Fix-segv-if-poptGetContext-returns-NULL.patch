@@ -1,0 +1,35 @@
+From bbecd5bc1ad23d83bf83e8b107c1e16b05901a79 Mon Sep 17 00:00:00 2001
+From: Ronnie Sahlberg <ronniesahlberg@gmail.com>
+Date: Thu, 30 Jan 2025 13:27:38 +1000
+Subject: [PATCH 03/38] options.c: Fix segv if poptGetContext returns NULL
+
+If poptGetContext returns NULL, perhaps due to OOM,
+a NULL pointer is passed into poptReadDefaultConfig()
+which in turns SEGVs when trying to dereference it.
+
+This was found using https://github.com/sahlberg/malloc-fail-tester.git
+$ ./test_malloc_failure.sh rsync -Pav crash crosh
+
+Signed-off-by: Ronnie Sahlberg <ronniesahlberg@gmail.com>
+---
+ options.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/options.c b/options.c
+index 578507c6..7cfe6391 100644
+--- a/options.c
++++ b/options.c
+@@ -1369,6 +1369,10 @@ int parse_arguments(int *argc_p, const char ***argv_p)
+ 	/* TODO: Call poptReadDefaultConfig; handle errors. */
+ 
+ 	pc = poptGetContext(RSYNC_NAME, argc, argv, long_options, 0);
++	if (pc == NULL) {
++		strlcpy(err_buf, "poptGetContext returned NULL\n", sizeof err_buf);
++		return 0;
++	}
+ 	if (!am_server) {
+ 		poptReadDefaultConfig(pc, 0);
+ 		popt_unalias(pc, "--daemon");
+-- 
+2.51.0
+

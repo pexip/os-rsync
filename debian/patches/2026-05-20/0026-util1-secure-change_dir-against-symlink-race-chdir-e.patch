@@ -1,0 +1,203 @@
+From a2c1b98c2a0886b989f768464c61c4c93009c1f4 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Tue, 5 May 2026 14:34:33 +1000
+Subject: [PATCH 26/38] util1: secure change_dir() against symlink-race
+ chdir-escape
+
+The receiver's chdir(2) into a destination subdirectory followed
+attacker-planted symlinks at every path component. Once CWD
+escaped the module, every subsequent path-relative syscall (open,
+chmod, lchown, ...) inherited the escape -- defeating
+secure_relative_open's RESOLVE_BENEATH anchor against AT_FDCWD,
+since the anchor itself was now outside the module.
+
+Route change_dir's relative target through secure_relative_open()
+and fchdir() to the resulting dirfd in am_daemon && !am_chrooted
+mode, so the chdir step itself can no longer follow a parent-
+symlink. Same treatment applied to the CD_SKIP_CHDIR /
+set_path_only path so it also can't follow attacker symlinks
+during path tracking.
+
+Adds testsuite/sender-flist-symlink-leak.test covering the
+sender-side flist resolution variant of the same primitive.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ testsuite/sender-flist-symlink-leak.test | 90 ++++++++++++++++++++++++
+ util1.c                                  | 56 +++++++++++++--
+ 2 files changed, 142 insertions(+), 4 deletions(-)
+ create mode 100755 testsuite/sender-flist-symlink-leak.test
+
+diff --git a/testsuite/sender-flist-symlink-leak.test b/testsuite/sender-flist-symlink-leak.test
+new file mode 100755
+index 00000000..011d93d0
+--- /dev/null
++++ b/testsuite/sender-flist-symlink-leak.test
+@@ -0,0 +1,90 @@
++#!/bin/sh
++
++# Copyright (C) 2026 by Andrew Tridgell
++
++# This program is distributable under the terms of the GNU GPL (see
++# COPYING).
++
++# Regression test for codex re-check finding: the sender-side file-
++# list generator can still follow an attacker-planted symlink out of
++# the module via change_pathname() -> change_dir(...,CD_SKIP_CHDIR)
++# followed by change_dir(...,CD_NORMAL). The CD_SKIP_CHDIR sets
++# skipped_chdir=1, and the next CD_NORMAL call's secure-branch in
++# util1.c is gated on `!skipped_chdir`, so the secure path is
++# bypassed and a raw chdir(curr_dir) follows attacker-controlled
++# symlinks during flist generation.
++#
++# Reach: rsync daemon module with `use chroot = no`. A local
++# attacker plants module/cd -> /outside. A client (innocent or
++# malicious) pulls rsync://<daemon>/<module>/cd/. The daemon, as
++# sender, enumerates files in /outside and ships their metadata
++# (names, sizes, modes, mtimes) to the client. The actual content
++# transfer fails later at the secure_relative_open step with EXDEV,
++# but by then the metadata has already leaked.
++#
++# We detect by running a dry-run pull of the symlinked subdir and
++# checking whether the client's --list-only output mentions any
++# file from /outside. With the bug, /outside/secret.txt appears in
++# the list with its size; with the fix, the daemon's chdir into
++# the symlinked subdir is rejected and no /outside file is listed.
++
++. "$suitedir/rsync.fns"
++
++case "$(uname -s)" in
++    SunOS|OpenBSD|NetBSD|CYGWIN*)
++        test_skipped "secure change_dir relies on RESOLVE_BENEATH-equivalent kernel support not available on $(uname -s)"
++        ;;
++esac
++
++mod="$scratchdir/module"
++outside="$scratchdir/outside"
++listfile="$scratchdir/listed.txt"
++conf="$scratchdir/test-rsyncd.conf"
++
++rm -rf "$mod" "$outside"
++mkdir -p "$mod" "$outside"
++
++# Outside-the-module file the daemon should NOT enumerate to clients.
++# A distinctive name + non-trivial size makes the leak easy to spot.
++echo "OUTSIDE_PROTECTED_FILE_USED_AS_LEAK_DETECTOR" > "$outside/leak_marker.txt"
++chmod 0644 "$outside/leak_marker.txt"
++
++# The symlink trap planted by the local attacker.
++ln -s "$outside" "$mod/cd"
++
++my_uid=`get_testuid`
++root_uid=`get_rootuid`
++root_gid=`get_rootgid`
++uid_setting="uid = $root_uid"
++gid_setting="gid = $root_gid"
++if test x"$my_uid" != x"$root_uid"; then
++    uid_setting="#$uid_setting"
++    gid_setting="#$gid_setting"
++fi
++
++cat > "$conf" <<EOF
++use chroot = no
++$uid_setting
++$gid_setting
++log file = $scratchdir/rsyncd.log
++[upload]
++    path = $mod
++    use chroot = no
++    read only = no
++EOF
++
++# Pull recursively into the symlinked subdir with dry-run + verbose,
++# capturing the daemon's flist (file list) on stdout. If the daemon
++# enumerates /outside, leak_marker.txt will appear in the listing.
++RSYNC_CONNECT_PROG="$RSYNC --config=$conf --daemon" \
++    $RSYNC -nrv rsync://localhost/upload/cd/ "$scratchdir/dst/" \
++    > "$listfile" 2>&1 || true
++
++if grep -q "leak_marker\.txt" "$listfile"; then
++    echo "----- leaked listing follows" >&2
++    sed 's/^/    /' "$listfile" >&2
++    echo "----- leaked listing ends" >&2
++    test_fail "sender flist leak: outside/leak_marker.txt was enumerated to the client (daemon's chdir followed the cd symlink during flist generation)"
++fi
++
++exit 0
+diff --git a/util1.c b/util1.c
+index 25ac7c9b..796604f6 100644
+--- a/util1.c
++++ b/util1.c
+@@ -1116,6 +1116,7 @@ char *sanitize_path(char *dest, const char *p, const char *rootdir, int depth, i
+  * Also cleans the path using the clean_fname() function. */
+ int change_dir(const char *dir, int set_path_only)
+ {
++	extern int am_daemon, am_chrooted;
+ 	static int initialised, skipped_chdir;
+ 	unsigned int len;
+ 
+@@ -1154,10 +1155,57 @@ int change_dir(const char *dir, int set_path_only)
+ 			curr_dir[curr_dir_len++] = '/';
+ 		memcpy(curr_dir + curr_dir_len, dir, len + 1);
+ 
+-		if (!set_path_only && chdir(curr_dir)) {
+-			curr_dir_len = save_dir_len;
+-			curr_dir[curr_dir_len] = '\0';
+-			return 0;
++		if (!set_path_only) {
++			int chdir_failed;
++			/* In the daemon-without-chroot deployment we must not
++			 * follow a symlink in any component of the chdir
++			 * target -- otherwise CWD escapes the module and
++			 * every subsequent path-relative syscall (open,
++			 * chmod, lchown, ...) inherits the escape, which
++			 * defeats secure_relative_open's RESOLVE_BENEATH
++			 * anchor and re-opens the CVE-2026-29518 class of
++			 * symlink TOCTOU attacks. Use the secure resolver
++			 * to get a confined dirfd, then fchdir() to it.
++			 *
++			 * If skipped_chdir is set, a previous CD_SKIP_CHDIR
++			 * call buffered an absolute prefix in curr_dir
++			 * (e.g. change_pathname's CD_SKIP_CHDIR to orig_dir)
++			 * without syncing the kernel's CWD. Resolve `dir`
++			 * relative to that prefix as basedir so the secure
++			 * branch still anchors at the operator-trusted
++			 * directory rather than wherever the kernel CWD
++			 * happens to be. */
++			if (am_daemon && !am_chrooted) {
++				const char *basedir = NULL;
++				char prefix[MAXPATHLEN];
++				int dfd;
++				if (skipped_chdir) {
++					if (save_dir_len >= sizeof prefix) {
++						errno = ENAMETOOLONG;
++						chdir_failed = 1;
++						goto chdir_cleanup;
++					}
++					memcpy(prefix, curr_dir, save_dir_len);
++					prefix[save_dir_len] = '\0';
++					basedir = prefix;
++				}
++				dfd = secure_relative_open(basedir, dir,
++					O_RDONLY | O_DIRECTORY, 0);
++				if (dfd < 0) {
++					chdir_failed = 1;
++				} else {
++					chdir_failed = fchdir(dfd) != 0;
++					close(dfd);
++				}
++			} else {
++				chdir_failed = chdir(curr_dir) != 0;
++			}
++		chdir_cleanup:
++			if (chdir_failed) {
++				curr_dir_len = save_dir_len;
++				curr_dir[curr_dir_len] = '\0';
++				return 0;
++			}
+ 		}
+ 		skipped_chdir = set_path_only;
+ 	}
+-- 
+2.51.0
+

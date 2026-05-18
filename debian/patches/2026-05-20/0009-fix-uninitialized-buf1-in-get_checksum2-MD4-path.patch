@@ -1,0 +1,33 @@
+From 487a548f70fa418d99e96f4ec77c6139d7e03ed6 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Tue, 30 Dec 2025 16:21:41 +1100
+Subject: [PATCH 09/38] fix uninitialized buf1 in get_checksum2() MD4 path
+
+The static buf1 pointer was only allocated when len > len1, but on
+first call with len == 0, this condition is false (0 > 0), leaving
+buf1 NULL when passed to memcpy().
+
+Fixes #673
+---
+ checksum.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/checksum.c b/checksum.c
+index 66e80896..6f0f95ab 100644
+--- a/checksum.c
++++ b/checksum.c
+@@ -366,9 +366,8 @@ void get_checksum2(char *buf, int32 len, char *sum)
+ 
+ 		mdfour_begin(&m);
+ 
+-		if (len > len1) {
+-			if (buf1)
+-				free(buf1);
++		if (len > len1 || !buf1) {
++			free(buf1);
+ 			buf1 = new_array(char, len+4);
+ 			len1 = len;
+ 		}
+-- 
+2.51.0
+

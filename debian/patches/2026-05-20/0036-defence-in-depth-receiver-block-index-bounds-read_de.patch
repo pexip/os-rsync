@@ -1,0 +1,80 @@
+From fc9a5d64521756dabfd9a17d4daa536fda556f1e Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Wed, 31 Dec 2025 14:01:34 +1100
+Subject: [PATCH 36/38] defence-in-depth: receiver block-index bounds +
+ read_delay_line null check
+
+Two assorted audit findings:
+
+  - receive_data() never bounds-checked the block index returned
+    by recv_token() against sum.count before computing offset2
+    and feeding it to map_ptr(). An out-of-bounds index from a
+    hostile sender produces invalid memory access. Add a
+    sum.count bounds check.
+
+  - read_delay_line()'s strchr() call could return NULL when no
+    space was found, but the code unconditionally added 1 to the
+    result before dereferencing. Low impact (just a disconnect on
+    exit of the client-specific forked process) but the NULL
+    deref is real. Guard the NULL.
+
+Both reported by Joshua Rogers.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ generator.c | 14 ++++++++++----
+ receiver.c  |  5 +++++
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/generator.c b/generator.c
+index 89f99db4..4d4ae72e 100644
+--- a/generator.c
++++ b/generator.c
+@@ -229,11 +229,13 @@ static int read_delay_line(char *buf, int *flags_p)
+ 		*flags_p = 0;
+ 
+ 	if (sscanf(bp, "%x ", &mode) != 1) {
+-	  invalid_data:
+-		rprintf(FERROR, "ERROR: invalid data in delete-delay file.\n");
+-		return -1;
++		goto invalid_data;
++	}
++	past_space = strchr(bp, ' ');
++	if (!past_space) {
++		goto invalid_data;
+ 	}
+-	past_space = strchr(bp, ' ') + 1;
++	past_space++;
+ 	len = j - read_pos - (past_space - bp) + 1; /* count the '\0' */
+ 	read_pos = j + 1;
+ 
+@@ -247,6 +249,10 @@ static int read_delay_line(char *buf, int *flags_p)
+ 	memcpy(buf, past_space, len);
+ 
+ 	return mode;
++
++invalid_data:
++	rprintf(FERROR, "ERROR: invalid data in delete-delay file.\n");
++	return -1;
+ }
+ 
+ static void do_delayed_deletions(char *delbuf)
+diff --git a/receiver.c b/receiver.c
+index 3fa68d71..f49931bf 100644
+--- a/receiver.c
++++ b/receiver.c
+@@ -352,6 +352,11 @@ static int receive_data(int f_in, char *fname_r, int fd_r, OFF_T size_r,
+ 		}
+ 
+ 		i = -(i+1);
++		if (i < 0 || i >= sum.count) {
++			rprintf(FERROR, "Invalid block index %d (count=%ld) [%s]\n",
++				i, (long)sum.count, who_am_i());
++			exit_cleanup(RERR_PROTOCOL);
++		}
+ 		offset2 = i * (OFF_T)sum.blength;
+ 		len = sum.blength;
+ 		if (i == (int)sum.count-1 && sum.remainder != 0)
+-- 
+2.51.0
+
