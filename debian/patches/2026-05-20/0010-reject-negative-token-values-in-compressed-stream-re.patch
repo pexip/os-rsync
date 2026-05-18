@@ -1,0 +1,72 @@
+From 4585f8a6f22fc93993002c7bae7ddd174a49dc86 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Tue, 30 Dec 2025 18:49:34 +1100
+Subject: [PATCH 10/38] reject negative token values in compressed stream
+ receivers
+
+Validate that token numbers read from compressed streams are
+non-negative. A negative token value would cause the return value
+of recv_*_token() to become positive, which callers interpret as
+literal data length, but no data pointer is set on this code path.
+
+While this only causes the receiver to crash (which is process-isolated
+and only affects the attacker's own connection), it's still undefined
+behavior.
+
+Reported-by: Will Sergeant <wlsergeant@gmail.com>
+---
+ token.c | 21 ++++++++++++++++++---
+ 1 file changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/token.c b/token.c
+index c108b3af..b7a02ea1 100644
+--- a/token.c
++++ b/token.c
+@@ -589,8 +589,13 @@ static int32 recv_deflated_token(int f, char **data)
+ 			if (flag & TOKEN_REL) {
+ 				rx_token += flag & 0x3f;
+ 				flag >>= 6;
+-			} else
++			} else {
+ 				rx_token = read_int(f);
++				if (rx_token < 0) {
++					rprintf(FERROR, "invalid token number in compressed stream\n");
++					exit_cleanup(RERR_PROTOCOL);
++				}
++			}
+ 			if (flag & 1) {
+ 				rx_run = read_byte(f);
+ 				rx_run += read_byte(f) << 8;
+@@ -831,8 +836,13 @@ static int32 recv_zstd_token(int f, char **data)
+ 			if (flag & TOKEN_REL) {
+ 				rx_token += flag & 0x3f;
+ 				flag >>= 6;
+-			} else
++			} else {
+ 				rx_token = read_int(f);
++				if (rx_token < 0) {
++					rprintf(FERROR, "invalid token number in compressed stream\n");
++					exit_cleanup(RERR_PROTOCOL);
++				}
++			}
+ 			if (flag & 1) {
+ 				rx_run = read_byte(f);
+ 				rx_run += read_byte(f) << 8;
+@@ -995,8 +1005,13 @@ static int32 recv_compressed_token(int f, char **data)
+ 			if (flag & TOKEN_REL) {
+ 				rx_token += flag & 0x3f;
+ 				flag >>= 6;
+-			} else
++			} else {
+ 				rx_token = read_int(f);
++				if (rx_token < 0) {
++					rprintf(FERROR, "invalid token number in compressed stream\n");
++					exit_cleanup(RERR_PROTOCOL);
++				}
++			}
+ 			if (flag & 1) {
+ 				rx_run = read_byte(f);
+ 				rx_run += read_byte(f) << 8;
+-- 
+2.51.0
+

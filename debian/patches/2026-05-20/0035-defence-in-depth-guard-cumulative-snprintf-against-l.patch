@@ -1,0 +1,79 @@
+From 3d5a5a6568a90ef47d5b9d54ef6253effee19a6f Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Fri, 1 May 2026 09:30:31 +1000
+Subject: [PATCH 35/38] defence-in-depth: guard cumulative snprintf against
+ length underflow
+
+Two cumulative-snprintf patterns in log.c (rsyserr) and main.c
+(output_itemized_counts) had the shape
+
+    len = snprintf(buf, sizeof buf, ...);
+    len += snprintf(buf+len, sizeof buf - len, ...);
+
+with no guard between calls. snprintf returns the would-have-been
+length on truncation, so a truncated first call leaves
+"sizeof buf - len" as a negative-then-promoted-to-size_t value,
+underflowing into a huge size_t and writing past buf.
+
+Realistic exposure is small in both cases (log header well under
+buffer, only ~5 itemized iterations writing ~25 chars each into a
+1024-byte buffer) but the defect class matches bb0a8118 and the
+fix is cheap. Guard before each subsequent call.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ log.c  | 12 +++++++++---
+ main.c |  9 +++++++++
+ 2 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/log.c b/log.c
+index e4ba1cce..b948f16a 100644
+--- a/log.c
++++ b/log.c
+@@ -456,11 +456,17 @@ void rsyserr(enum logcode code, int errcode, const char *format, ...)
+ 	char buf[BIGPATHBUFLEN];
+ 	size_t len;
+ 
++	/* snprintf returns the would-have-been length on truncation, so
++	 * each cumulative call must be guarded; if not, sizeof buf - len
++	 * can underflow when promoted to size_t and the next call writes
++	 * past the buffer. */
+ 	len = snprintf(buf, sizeof buf, RSYNC_NAME ": [%s] ", who_am_i());
+ 
+-	va_start(ap, format);
+-	len += vsnprintf(buf + len, sizeof buf - len, format, ap);
+-	va_end(ap);
++	if (len < sizeof buf) {
++		va_start(ap, format);
++		len += vsnprintf(buf + len, sizeof buf - len, format, ap);
++		va_end(ap);
++	}
+ 
+ 	if (len < sizeof buf) {
+ 		len += snprintf(buf + len, sizeof buf - len,
+diff --git a/main.c b/main.c
+index e6dc134c..549b1da5 100644
+--- a/main.c
++++ b/main.c
+@@ -394,9 +394,18 @@ static void output_itemized_counts(const char *prefix, int *counts)
+ 		counts[0] -= counts[1] + counts[2] + counts[3] + counts[4];
+ 		for (j = 0; j < 5; j++) {
+ 			if (counts[j]) {
++				/* snprintf can return more than its size arg
++				 * on truncation; keep len <= sizeof buf - 2 so
++				 * the closing ')' and trailing NUL always
++				 * have room and the next iteration's
++				 * sizeof buf - len - 2 cannot underflow. */
++				if (len >= (int)sizeof buf - 2)
++					break;
+ 				len += snprintf(buf+len, sizeof buf - len - 2,
+ 					"%s%s: %s",
+ 					pre, labels[j], comma_num(counts[j]));
++				if (len > (int)sizeof buf - 2)
++					len = (int)sizeof buf - 2;
+ 				pre = ", ";
+ 			}
+ 		}
+-- 
+2.51.0
+

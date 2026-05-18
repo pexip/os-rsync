@@ -1,3 +1,18 @@
+rsync (3.4.1+ds1-5+deb13u3) trixie-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * Address several vulnerabilities
+    - CVE-2026-29518: Symlink-race TOCTOU in daemon (use chroot = no)
+    - CVE-2026-43617: Authorization bypass via hostname resolution (daemon
+      chroot mode)
+    - CVE-2026-43618: Integer overflow in compressed-token decoder (info
+      disclosure)
+    - CVE-2026-43619: Symlink-race conditions in path-based syscalls
+    - CVE-2026-43620: Out-of-bounds array read in receiver recv_files()
+  * d/t/upstream-tests: Build t_chmod_secure and t_secure_relpath
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Mon, 18 May 2026 20:33:38 +0200
+
 rsync (3.4.1+ds1-5+deb13u2) trixie; urgency=medium
 
   * d/p/syscall_use_openat2...: New patch to fix symlink handling on the

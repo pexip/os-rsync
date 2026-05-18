@@ -1,0 +1,48 @@
+From dff93c92d1b0d576b385688db9c66773da4ab0a1 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Wed, 22 Apr 2026 10:59:11 +1000
+Subject: [PATCH 16/38] zero all new memory from allocations
+
+Change my_alloc() to use calloc instead of malloc so all fresh
+allocations return zeroed memory. Also zero the expanded portion
+in expand_item_list() after realloc, since it knows both old and
+new sizes. This gives more predictable behaviour in case of bugs
+where uninitialised or stale memory is accidentally accessed.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+---
+ util1.c | 2 ++
+ util2.c | 4 +---
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/util1.c b/util1.c
+index de634a84..25ac7c9b 100644
+--- a/util1.c
++++ b/util1.c
+@@ -1718,6 +1718,8 @@ void *expand_item_list(item_list *lp, size_t item_size, const char *desc, int in
+ 				new_ptr == lp->items ? " not" : "");
+ 		}
+ 
++		memset((char *)new_ptr + lp->malloced * item_size, 0,
++		       (expand_size - lp->malloced) * item_size);
+ 		lp->items = new_ptr;
+ 		lp->malloced = expand_size;
+ 	}
+diff --git a/util2.c b/util2.c
+index b59bff0a..ce6f7de1 100644
+--- a/util2.c
++++ b/util2.c
+@@ -79,9 +79,7 @@ void *my_alloc(void *ptr, size_t num, size_t size, const char *file, int line)
+ 			who_am_i(), do_big_num(max_alloc, 0, NULL), src_file(file), line);
+ 		exit_cleanup(RERR_MALLOC);
+ 	}
+-	if (!ptr)
+-		ptr = malloc(num * size);
+-	else if (ptr == do_calloc)
++	if (!ptr || ptr == do_calloc)
+ 		ptr = calloc(num, size);
+ 	else
+ 		ptr = realloc(ptr, num * size);
+-- 
+2.51.0
+

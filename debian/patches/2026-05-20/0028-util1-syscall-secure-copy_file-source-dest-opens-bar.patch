@@ -1,0 +1,565 @@
+From 90495eecd0039cab6f59f203afec2f37c47bc165 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Wed, 6 May 2026 09:45:30 +1000
+Subject: [PATCH 28/38] util1+syscall: secure copy_file source/dest opens;
+ bare-path defence-in-depth
+
+Three related codex audit findings:
+
+  Finding 3a: copy_file()'s source open in util1.c used
+  do_open_nofollow(), which only rejects a final-component
+  symlink. A parent-component symlink (e.g. --copy-dest=cd where
+  cd -> /outside) follows freely and reads outside the module.
+  Route through secure_relative_open() with O_NOFOLLOW.
+
+  Finding 3b: generator.c's in-place backup-file create still
+  used a bare do_open with O_CREAT, leaving a tiny but reachable
+  parent-symlink window between the secure unlink (already
+  through do_unlink_at) and the create. Add do_open_at() that
+  goes through a secure parent dirfd, and route the call site
+  through it.
+
+  Finding 3c: copy_file()'s destination open in
+  unlink_and_reopen() had the same bare-do_open pattern; route
+  through do_open_at as well.
+
+Adds testsuite/copy-dest-source-symlink.test and
+testsuite/bare-do-open-symlink-race.test as regression coverage
+for both attack shapes.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ generator.c                              |   2 +-
+ syscall.c                                | 138 +++++++++++++++--
+ testsuite/bare-do-open-symlink-race.test | 186 +++++++++++++++++++++++
+ testsuite/copy-dest-source-symlink.test  |  83 ++++++++++
+ util1.c                                  |  21 ++-
+ 5 files changed, 416 insertions(+), 14 deletions(-)
+ create mode 100755 testsuite/bare-do-open-symlink-race.test
+ create mode 100755 testsuite/copy-dest-source-symlink.test
+
+diff --git a/generator.c b/generator.c
+index e5b2d176..311e9b78 100644
+--- a/generator.c
++++ b/generator.c
+@@ -1896,7 +1896,7 @@ static void recv_generator(char *fname, struct file_struct *file, int ndx,
+ 			back_file = NULL;
+ 			goto cleanup;
+ 		}
+-		if ((f_copy = do_open(backupptr, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0600)) < 0) {
++		if ((f_copy = do_open_at(backupptr, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0600)) < 0) {
+ 			rsyserr(FERROR_XFER, errno, "open %s", full_fname(backupptr));
+ 			unmake_file(back_file);
+ 			back_file = NULL;
+diff --git a/syscall.c b/syscall.c
+index 2cff0b38..47777350 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -203,11 +203,6 @@ int do_symlink_at(const char *lnk, const char *path)
+ 	if (!am_daemon || am_chrooted)
+ 		return do_symlink(lnk, path);
+ 
+-#if defined NO_SYMLINK_XATTRS || defined NO_SYMLINK_USER_XATTRS
+-	if (am_root < 0)
+-		return do_symlink(lnk, path);
+-#endif
+-
+ 	if (!path || !*path || *path == '/')
+ 		return do_symlink(lnk, path);
+ 
+@@ -228,6 +223,34 @@ int do_symlink_at(const char *lnk, const char *path)
+ 	if (dfd < 0)
+ 		return -1;
+ 
++#if defined NO_SYMLINK_XATTRS || defined NO_SYMLINK_USER_XATTRS
++	/* For --fake-super, do_symlink writes the link target into a
++	 * regular file rather than creating a real symlink. Do that
++	 * here against the secure dirfd, with O_NOFOLLOW so a pre-
++	 * planted symlink at the basename can't redirect the file
++	 * creation. (Previously the fake-super branch fell through to
++	 * the bare-path do_symlink at the top of the function.) */
++	if (am_root < 0) {
++		int len = strlen(lnk);
++		int fd = openat(dfd, bname,
++				O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
++				S_IWUSR | S_IRUSR);
++		if (fd < 0) {
++			e = errno;
++			close(dfd);
++			errno = e;
++			return -1;
++		}
++		ret = (write(fd, lnk, len) == len) ? 0 : -1;
++		if (close(fd) < 0)
++			ret = -1;
++		e = errno;
++		close(dfd);
++		errno = e;
++		return ret;
++	}
++#endif
++
+ 	ret = symlinkat(lnk, dfd, bname);
+ 	e = errno;
+ 	close(dfd);
+@@ -503,9 +526,12 @@ int do_mknod(const char *pathname, mode_t mode, dev_t dev)
+   mknodat() against that dirfd. mknodat() covers both regular-file
+   (S_IFREG with dev=0) and FIFO (S_IFIFO) and device-node creation.
+ 
+-  Falls through to do_mknod() for fake-super (am_root < 0) and for
+-  sockets, both of which use auxiliary path-based syscalls that
+-  don't have an *at() variant in any portable form.
++  Fake-super (am_root < 0) is handled inline against the secure
++  parent dirfd: it creates a regular empty file (the same file-as-
++  metadata-placeholder pattern do_mknod uses) via openat() with
++  O_NOFOLLOW. Sockets fall through to do_mknod() because their
++  bind(2) takes a path argument with no portable bindat() variant;
++  this is documented as a residual.
+ */
+ int do_mknod_at(const char *pathname, mode_t mode, dev_t dev)
+ {
+@@ -523,9 +549,6 @@ int do_mknod_at(const char *pathname, mode_t mode, dev_t dev)
+ 	if (!am_daemon || am_chrooted)
+ 		return do_mknod(pathname, mode, dev);
+ 
+-	if (am_root < 0)
+-		return do_mknod(pathname, mode, dev);
+-
+ #if !defined MKNOD_CREATES_SOCKETS && defined HAVE_SYS_UN_H
+ 	if (S_ISSOCK(mode))
+ 		return do_mknod(pathname, mode, dev);
+@@ -551,6 +574,29 @@ int do_mknod_at(const char *pathname, mode_t mode, dev_t dev)
+ 	if (dfd < 0)
+ 		return -1;
+ 
++	if (am_root < 0) {
++		/* For --fake-super, do_mknod creates a regular empty
++		 * file as a placeholder for the special-file metadata
++		 * (which is stored in xattrs elsewhere). Do that against
++		 * the secure dirfd, with O_NOFOLLOW so a pre-planted
++		 * symlink at the basename can't redirect the file
++		 * creation. */
++		int fd = openat(dfd, bname,
++				O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
++				S_IWUSR | S_IRUSR);
++		if (fd < 0) {
++			e = errno;
++			close(dfd);
++			errno = e;
++			return -1;
++		}
++		ret = (close(fd) < 0) ? -1 : 0;
++		e = errno;
++		close(dfd);
++		errno = e;
++		return ret;
++	}
++
+ #if !defined MKNOD_CREATES_FIFOS && defined HAVE_MKFIFO
+ 	if (S_ISFIFO(mode))
+ 		ret = mkfifoat(dfd, bname, mode);
+@@ -639,6 +685,76 @@ int do_open(const char *pathname, int flags, mode_t mode)
+ 	return open(pathname, flags | O_BINARY, mode);
+ }
+ 
++/*
++  Symlink-race-safe variant of do_open() for receiver-side use. See
++  the comment on do_chmod_at() for the threat model. open() resolves
++  parent components, so a parent-symlink swap can redirect the open
++  to a file outside the module. This wrapper is defence-in-depth for
++  bare-path do_open() sites that callers know are otherwise
++  protected by secure parent-syscalls (e.g. generator.c's in-place
++  backup creation, where robust_unlink() rejects the symlinked
++  parent before this open is reached): if any of those upstream
++  protections is later removed or regresses, the open here still
++  refuses to escape the module.
++
++  Defence: open the parent of pathname under secure_relative_open()
++  and call openat() against the resulting dirfd with O_NOFOLLOW
++  (so the basename itself isn't followed if it happens to be a
++  pre-planted symlink, which is what we want for O_CREAT|O_EXCL).
++*/
++int do_open_at(const char *pathname, int flags, mode_t mode)
++{
++#ifdef AT_FDCWD
++	extern int am_daemon, am_chrooted;
++	char dirpath[MAXPATHLEN];
++	const char *bname;
++	const char *slash;
++	int dfd, ret, e;
++	size_t dlen;
++
++	if (flags != O_RDONLY) {
++		RETURN_ERROR_IF(dry_run, 0);
++		RETURN_ERROR_IF_RO_OR_LO;
++	}
++
++	if (!am_daemon || am_chrooted)
++		return do_open(pathname, flags, mode);
++
++	if (!pathname || !*pathname || *pathname == '/')
++		return do_open(pathname, flags, mode);
++
++	slash = strrchr(pathname, '/');
++	if (!slash)
++		return do_open(pathname, flags, mode);
++
++	dlen = slash - pathname;
++	if (dlen >= sizeof dirpath) {
++		errno = ENAMETOOLONG;
++		return -1;
++	}
++	memcpy(dirpath, pathname, dlen);
++	dirpath[dlen] = '\0';
++	bname = slash + 1;
++
++	dfd = secure_relative_open(NULL, dirpath, O_RDONLY | O_DIRECTORY, 0);
++	if (dfd < 0)
++		return -1;
++
++#ifdef O_NOATIME
++	if (open_noatime)
++		flags |= O_NOATIME;
++#endif
++
++	ret = openat(dfd, bname, flags | O_NOFOLLOW | O_BINARY, mode);
++	e = errno;
++	close(dfd);
++	errno = e;
++	return ret;
++#else
++	return do_open(pathname, flags, mode);
++#endif
++}
++
+ #ifdef HAVE_CHMOD
+ int do_chmod(const char *path, mode_t mode)
+ {
+diff --git a/testsuite/bare-do-open-symlink-race.test b/testsuite/bare-do-open-symlink-race.test
+new file mode 100755
+index 00000000..b8c51bbe
+--- /dev/null
++++ b/testsuite/bare-do-open-symlink-race.test
+@@ -0,0 +1,186 @@
++#!/bin/sh
++
++# Copyright (C) 2026 by Andrew Tridgell
++
++# This program is distributable under the terms of the GNU GPL (see
++# COPYING).
++
++# Regression test for codex audit Findings 3b and 3c:
++#
++#   3b: generator.c:1905 -- the in-place backup creation opens
++#       backupptr via bare do_open(O_WRONLY|O_CREAT|O_TRUNC|O_EXCL).
++#       With --backup-dir set to an attacker-planted parent symlink,
++#       the backup file is written outside the module under the
++#       daemon's authority.
++#
++#   3c-symlink: syscall.c:207 -- do_symlink_at falls through to bare
++#       do_symlink for am_root < 0 (fake-super), which then opens
++#       the destination path with bare open() (final-component
++#       fake-super file). A parent symlink on the destination path
++#       redirects the file creation outside the module.
++#
++#   3c-mknod: syscall.c:506 -- do_mknod_at falls through to bare
++#       do_mknod for am_root < 0, same path-based open(). For
++#       FIFOs/sockets/devices the bare path is also used.
++#
++# Each scenario plants a "secret" file outside the module at a
++# location the symlink trap points to. The check is that the
++# outside file's content and mode are unchanged after the attack
++# attempt.
++
++. "$suitedir/rsync.fns"
++
++# All three scenarios depend on receiver-side daemon code paths
++# that are only secured on platforms with a working
++# secure_relative_open. The chdir/chmod tests already skip the
++# same set; mirror that.
++case "$(uname -s)" in
++    SunOS|OpenBSD|NetBSD|CYGWIN*)
++        test_skipped "secure_relative_open relies on RESOLVE_BENEATH-equivalent kernel support not available on $(uname -s)"
++        ;;
++esac
++
++mod="$scratchdir/module"
++outside="$scratchdir/outside"
++src="$scratchdir/src"
++conf="$scratchdir/test-rsyncd.conf"
++
++# Portable inode-and-mode helpers.
++file_mode() {
++    stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
++}
++
++setup() {
++    rm -rf "$mod" "$outside" "$src"
++    mkdir -p "$mod" "$outside" "$src"
++
++    echo "OUTSIDE_PROTECTED_DATA" > "$outside/target.txt"
++    chmod 0644 "$outside/target.txt"
++    outside_pristine="$scratchdir/outside-pristine.txt"
++    cp -p "$outside/target.txt" "$outside_pristine"
++
++    ln -s "$outside" "$mod/cd"
++}
++
++verify_outside_unchanged() {
++    label="$1"
++    mode=$(file_mode "$outside/target.txt")
++    case "$mode" in
++        644|0644) ;;
++        *) test_fail "$label: outside/target.txt mode changed from 644 to $mode" ;;
++    esac
++    if ! cmp -s "$outside/target.txt" "$outside_pristine"; then
++        test_fail "$label: outside/target.txt content changed -- daemon followed the cd symlink"
++    fi
++}
++
++verify_outside_unchanged_or_absent() {
++    label="$1"
++    target="$2"  # specific file under outside/ to check absence of
++    if [ -e "$outside/$target" ]; then
++        test_fail "$label: outside/$target was created -- daemon followed the cd symlink"
++    fi
++}
++
++
++############################################################
++# Scenario 3b: --inplace --backup --backup-dir=cd
++#
++# Pre-create module/target.txt so the receiver enters the in-place
++# update path; a backup of the existing content must be made
++# before the update. With --backup-dir=cd, backupptr resolves to
++# "cd/target.txt"; with the bug, robust_unlink and the bare
++# do_open at generator.c:1905 both follow the cd symlink, the
++# unlink deletes outside/target.txt and the create writes the
++# pre-existing module/target.txt content there.
++############################################################
++
++setup
++echo "EXISTING_MODULE_DATA" > "$mod/target.txt"
++chmod 0666 "$mod/target.txt"
++echo "NEW_DATA_FROM_SENDER" > "$src/target.txt"
++chmod 0644 "$src/target.txt"
++
++cat > "$conf" <<EOF
++use chroot = no
++log file = $scratchdir/rsyncd.log
++[upload]
++    path = $mod
++    use chroot = no
++    read only = no
++EOF
++
++RSYNC_CONNECT_PROG="$RSYNC --config=$conf --daemon" \
++    $RSYNC --inplace --backup --backup-dir=cd "$src/target.txt" \
++    rsync://localhost/upload/target.txt >/dev/null 2>&1 || true
++
++verify_outside_unchanged "3b inplace+backup-dir=cd"
++
++
++############################################################
++# Scenario 3c-symlink: fake-super symlink push to a path with a
++# symlinked parent
++#
++# With "fake super = yes" set on the module, the receiver
++# represents symlinks as fake-super files (regular files with the
++# link target written to them). The path-based open() in
++# do_symlink's fake-super branch follows parent symlinks. We push
++# a single symlink to the destination path "cd/sym" so the
++# receiver's create-file call lands at "cd/sym" relative to the
++# module root, where cd is the symlink trap.
++############################################################
++
++setup
++
++mkdir -p "$src/cd"
++ln -s /etc/passwd "$src/cd/sym"
++
++cat > "$conf" <<EOF
++use chroot = no
++log file = $scratchdir/rsyncd.log
++[upload_fake]
++    path = $mod
++    use chroot = no
++    read only = no
++    fake super = yes
++EOF
++
++RSYNC_CONNECT_PROG="$RSYNC --config=$conf --daemon" \
++    $RSYNC -rl "$src/" rsync://localhost/upload_fake/ >/dev/null 2>&1 || true
++
++verify_outside_unchanged_or_absent "3c-symlink fake-super symlink push" "sym"
++
++
++############################################################
++# Scenario 3c-mknod: fake-super FIFO push to a path with a
++# symlinked parent
++#
++# Similar to 3c-symlink but for special files. mkfifo works
++# without root; we push a FIFO and verify the receiver doesn't
++# create a fake-super file at outside/fifo.
++############################################################
++
++setup
++
++mkdir -p "$src/cd"
++mkfifo "$src/cd/fifo" 2>/dev/null
++if [ ! -p "$src/cd/fifo" ]; then
++    test_skipped "mkfifo unavailable; cannot exercise 3c-mknod"
++fi
++
++cat > "$conf" <<EOF
++use chroot = no
++log file = $scratchdir/rsyncd.log
++[upload_fake]
++    path = $mod
++    use chroot = no
++    read only = no
++    fake super = yes
++EOF
++
++RSYNC_CONNECT_PROG="$RSYNC --config=$conf --daemon" \
++    $RSYNC -rD "$src/" rsync://localhost/upload_fake/ >/dev/null 2>&1 || true
++
++verify_outside_unchanged_or_absent "3c-mknod fake-super FIFO push" "fifo"
++
++exit 0
+diff --git a/testsuite/copy-dest-source-symlink.test b/testsuite/copy-dest-source-symlink.test
+new file mode 100755
+index 00000000..2d20fab4
+--- /dev/null
++++ b/testsuite/copy-dest-source-symlink.test
+@@ -0,0 +1,83 @@
++#!/bin/sh
++
++# Copyright (C) 2026 by Andrew Tridgell
++
++# This program is distributable under the terms of the GNU GPL (see
++# COPYING).
++
++# Regression test for codex audit Finding 3a: copy_file()'s source
++# open in copy_altdest_file() is via do_open_nofollow(), which only
++# refuses a final-component symlink. Parent components are still
++# resolved with normal symlink-following. A daemon module attacker
++# who plants a parent symlink at module/cd -> /outside, then runs
++# --copy-dest=cd against a source file matching the size+mtime of
++# /outside/target.txt, drives the receiver to:
++#
++#   1. Find a match-level >= 2 basis at "cd/target.txt"
++#   2. Call copy_altdest_file -> copy_file(src="cd/target.txt", ...)
++#   3. do_open_nofollow follows the "cd" parent symlink and reads
++#      the contents of /outside/target.txt under the daemon's
++#      authority
++#   4. Copy that content into the module destination
++#
++# Result: outside/target.txt content lands at module/target.txt,
++# accessible to the attacker on a subsequent pull.
++#
++# We detect by content: src/target.txt and outside/target.txt have
++# identical metadata (size + mtime + mode) but different content.
++# After the transfer, module/target.txt should match src (no
++# basedir escape) -- if it matches outside, the bug copied across
++# the symlink boundary.
++
++. "$suitedir/rsync.fns"
++
++mod="$scratchdir/module"
++outside="$scratchdir/outside"
++src="$scratchdir/src"
++conf="$scratchdir/test-rsyncd.conf"
++
++rm -rf "$mod" "$outside" "$src"
++mkdir -p "$mod" "$outside" "$src"
++
++# Outside-the-module file the daemon should not read on the
++# attacker's behalf.
++echo "OUTSIDE_LEAKED_DATA!" > "$outside/target.txt"
++chmod 0644 "$outside/target.txt"
++
++# The symlink trap.
++ln -s "$outside" "$mod/cd"
++
++# Source: same size, same mtime, same mode as outside -- so the
++# generator's link_stat + quick_check_ok finds a match-level >= 2
++# basis and calls copy_altdest_file.
++echo "ATTACKER_KNOWN_DATA!" > "$src/target.txt"
++touch -r "$outside/target.txt" "$src/target.txt"
++chmod 0644 "$src/target.txt"
++
++cat > "$conf" <<EOF
++use chroot = no
++log file = $scratchdir/rsyncd.log
++[upload]
++    path = $mod
++    use chroot = no
++    read only = no
++EOF
++
++# --copy-dest push to module root.
++RSYNC_CONNECT_PROG="$RSYNC --config=$conf --daemon" \
++    $RSYNC -rtp --copy-dest=cd "$src/" rsync://localhost/upload/ \
++    >/dev/null 2>&1 || true
++
++if [ ! -f "$mod/target.txt" ]; then
++    test_fail "destination file was not created -- daemon transfer failed before the test could observe the basedir behaviour"
++fi
++
++if cmp -s "$mod/target.txt" "$outside/target.txt"; then
++    test_fail "basedir-escape via copy_file source: module/target.txt now contains the contents of outside/target.txt -- daemon read /outside via the cd symlink and copied it into the module"
++fi
++
++if ! cmp -s "$mod/target.txt" "$src/target.txt"; then
++    test_fail "destination doesn't match source content (and isn't outside content either): unexpected state"
++fi
++
++exit 0
+diff --git a/util1.c b/util1.c
+index f85f33e9..49ead492 100644
+--- a/util1.c
++++ b/util1.c
+@@ -336,7 +336,13 @@ static int unlink_and_reopen(const char *dest, mode_t mode)
+ 		mode |= S_IWUSR;
+ #endif
+ 	mode &= INITACCESSPERMS;
+-	if ((ofd = do_open(dest, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, mode)) < 0) {
++	/* Use do_open_at so the create/truncate goes through a secure
++	 * parent dirfd in the daemon-no-chroot deployment. Otherwise
++	 * an attacker could swap a parent component with a symlink in
++	 * the window between robust_unlink (which uses do_unlink_at,
++	 * already secure) and the create here, and redirect the new
++	 * file outside the module. */
++	if ((ofd = do_open_at(dest, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, mode)) < 0) {
+ 		int save_errno = errno;
+ 		rsyserr(FERROR_XFER, save_errno, "open %s", full_fname(dest));
+ 		errno = save_errno;
+@@ -360,12 +366,23 @@ static int unlink_and_reopen(const char *dest, mode_t mode)
+  * --copy-dest options. */
+ int copy_file(const char *source, const char *dest, int tmpfilefd, mode_t mode)
+ {
++	extern int am_daemon, am_chrooted;
+ 	int ifd, ofd;
+ 	char buf[1024 * 8];
+ 	int len;   /* Number of bytes read into `buf'. */
+ 	OFF_T prealloc_len = 0, offset = 0;
+ 
+-	if ((ifd = do_open_nofollow(source, O_RDONLY)) < 0) {
++	/* On a daemon without chroot, route the source open through
++	 * secure_relative_open so a parent-symlink on the source path
++	 * (e.g. --copy-dest=cd where cd is a symlink to an outside
++	 * directory) cannot redirect the read to a file the daemon can
++	 * see but the attacker should not. Plain do_open_nofollow only
++	 * refuses a final-component symlink; parents are still followed. */
++	if (am_daemon && !am_chrooted && source && *source && source[0] != '/')
++		ifd = secure_relative_open(NULL, source, O_RDONLY | O_NOFOLLOW, 0);
++	else
++		ifd = do_open_nofollow(source, O_RDONLY);
++	if (ifd < 0) {
+ 		int save_errno = errno;
+ 		rsyserr(FERROR_XFER, errno, "open %s", full_fname(source));
+ 		errno = save_errno;
+-- 
+2.51.0
+

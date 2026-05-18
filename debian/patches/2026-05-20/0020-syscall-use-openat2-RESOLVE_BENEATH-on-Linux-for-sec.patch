@@ -1,7 +1,7 @@
-From 4fa7156ccdb2ad34b034d18fe2fd6cd79adef8a1 Mon Sep 17 00:00:00 2001
+From 45ce54b546f875f3752f621936681218c22991fc Mon Sep 17 00:00:00 2001
 From: Andrew Tridgell <andrew@tridgell.net>
 Date: Thu, 30 Apr 2026 08:39:22 +1000
-Subject: [PATCH] syscall: use openat2(RESOLVE_BENEATH) on Linux for
+Subject: [PATCH 20/38] syscall: use openat2(RESOLVE_BENEATH) on Linux for
  secure_relative_open
 
 The CVE fix in commit c35e283 made secure_relative_open() walk every
@@ -44,7 +44,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
  create mode 100755 testsuite/symlink-dirlink-basis.test
 
 diff --git a/syscall.c b/syscall.c
-index ec0e0708a..66c6d29c7 100644
+index 604cebe2..0881c7ab 100644
 --- a/syscall.c
 +++ b/syscall.c
 @@ -33,6 +33,11 @@
@@ -59,7 +59,7 @@ index ec0e0708a..66c6d29c7 100644
  #include "ifuncs.h"
  
  extern int dry_run;
-@@ -720,12 +725,49 @@ int do_open_nofollow(const char *pathname, int flags)
+@@ -715,12 +720,49 @@ int do_open_nofollow(const char *pathname, int flags)
  /*
    open a file relative to a base directory. The basedir can be NULL,
    in which case the current working directory is used. The relpath
@@ -114,7 +114,7 @@ index ec0e0708a..66c6d29c7 100644
  int secure_relative_open(const char *basedir, const char *relpath, int flags, mode_t mode)
  {
  	if (!relpath || relpath[0] == '/') {
-@@ -739,6 +781,16 @@ int secure_relative_open(const char *basedir, const char *relpath, int flags, mo
+@@ -734,6 +776,16 @@ int secure_relative_open(const char *basedir, const char *relpath, int flags, mo
  		return -1;
  	}
  
@@ -133,7 +133,7 @@ index ec0e0708a..66c6d29c7 100644
  	if (!basedir) {
 diff --git a/testsuite/symlink-dirlink-basis.test b/testsuite/symlink-dirlink-basis.test
 new file mode 100755
-index 000000000..9065dd814
+index 00000000..9065dd81
 --- /dev/null
 +++ b/testsuite/symlink-dirlink-basis.test
 @@ -0,0 +1,247 @@
@@ -384,3 +384,6 @@ index 000000000..9065dd814
 +
 +# The script would have aborted on error, so getting here means we've won.
 +exit 0
+-- 
+2.51.0
+

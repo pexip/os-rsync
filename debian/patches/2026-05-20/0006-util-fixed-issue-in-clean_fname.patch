@@ -1,0 +1,43 @@
+From 21e0496559fb3b0209099c52977efe3516ea6ca3 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Sat, 23 Aug 2025 19:14:59 +1000
+Subject: [PATCH 06/38] util: fixed issue in clean_fname()
+
+fixes buffer underflow (not exploitable) in clean_fname
+---
+ util1.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/util1.c b/util1.c
+index 231d2206..de634a84 100644
+--- a/util1.c
++++ b/util1.c
+@@ -942,7 +942,7 @@ int count_dir_elements(const char *p)
+  * resulting name would be empty, returns ".". */
+ int clean_fname(char *name, int flags)
+ {
+-	char *limit = name - 1, *t = name, *f = name;
++	char *limit = name, *t = name, *f = name;
+ 	int anchored;
+ 
+ 	if (!name)
+@@ -987,9 +987,13 @@ int clean_fname(char *name, int flags)
+ 					f += 2;
+ 					continue;
+ 				}
+-				while (s > limit && *--s != '/') {}
+-				if (s != t - 1 && (s < name || *s == '/')) {
+-					t = s + 1;
++				/* backing up for ".." — avoid reading before 'name' */
++				while (s > limit && s[-1] != '/')
++					s--;
++
++				/* If found prior '/', or we reached the start, adjust t. */
++				if (s != t - 1 && (s <= name || *s == '/')) {
++					t = (s == name) ? name : s + 1;
+ 					f += 2;
+ 					continue;
+ 				}
+-- 
+2.51.0
+
