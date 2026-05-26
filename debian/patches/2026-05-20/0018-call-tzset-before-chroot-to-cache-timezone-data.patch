@@ -1,0 +1,39 @@
+From 892b48a60b9e6d604de54034002bee65d7bcb4e2 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Wed, 22 Apr 2026 12:53:13 +1000
+Subject: [PATCH 18/38] call tzset() before chroot to cache timezone data
+
+localtime/localtime_r need /etc/localtime for timezone info.
+After chroot this file is inaccessible, causing log timestamps
+to fall back to UTC. Calling tzset() before chroot ensures the
+timezone data is cached by glibc for subsequent calls.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+---
+ clientserver.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/clientserver.c b/clientserver.c
+index 7c897abc..3800f0d6 100644
+--- a/clientserver.c
++++ b/clientserver.c
+@@ -976,6 +976,8 @@ static int rsync_module(int f_in, int f_out, int i, const char *addr, const char
+ 	}
+ 
+ 	if (use_chroot) {
++		/* Cache timezone data before chroot makes /etc/localtime inaccessible */
++		tzset();
+ 		if (chroot(module_chdir)) {
+ 			rsyserr(FLOG, errno, "chroot(\"%s\") failed", module_chdir);
+ 			io_printf(f_out, "@ERROR: chroot failed\n");
+@@ -1301,6 +1303,7 @@ int start_daemon(int f_in, int f_out)
+ 	p = lp_daemon_chroot();
+ 	if (*p) {
+ 		log_init(0); /* Make use we've initialized syslog before chrooting. */
++		tzset();
+ 		if (chroot(p) < 0) {
+ 			rsyserr(FLOG, errno, "daemon chroot(\"%s\") failed", p);
+ 			return -1;
+-- 
+2.51.0
+

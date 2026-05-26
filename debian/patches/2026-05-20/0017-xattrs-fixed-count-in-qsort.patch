@@ -1,7 +1,7 @@
-From bb0a8118c2d2ab01140bac5e4e327e5e1ef90c9c Mon Sep 17 00:00:00 2001
+From c009fcc8e6e61f20231e4a512faa174fa7c2eecd Mon Sep 17 00:00:00 2001
 From: Andrew Tridgell <andrew@tridgell.net>
 Date: Wed, 22 Apr 2026 09:57:45 +1000
-Subject: [PATCH] xattrs: fixed count in qsort
+Subject: [PATCH 17/38] xattrs: fixed count in qsort
 
 this fixes the count passed to the sort of the xattr list. This issue
 was reported here:
@@ -16,7 +16,7 @@ themselves.
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/xattrs.c b/xattrs.c
-index 26e50a6f9..65166eed9 100644
+index 26e50a6f..65166eed 100644
 --- a/xattrs.c
 +++ b/xattrs.c
 @@ -860,8 +860,8 @@ void receive_xattr(int f, struct file_struct *file)
@@ -30,3 +30,6 @@ index 26e50a6f9..65166eed9 100644
  
  	ndx = rsync_xal_store(&temp_xattr); /* adds item to rsync_xal_l */
  
+-- 
+2.51.0
+

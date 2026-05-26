@@ -1,0 +1,261 @@
+From ddd7b59a4f0492d957b4a4f0c318e7d81da31c6b Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Wed, 31 Dec 2025 12:56:54 +1100
+Subject: [PATCH 34/38] defence-in-depth: bound wire-supplied counts and
+ lengths
+
+Multiple receiver-side fields read from the wire were trusted
+without upper-bound checks. A hostile peer could either request
+extreme allocations (DoS via --max-alloc) or, on platforms where
+read_varint returned a negative value, push ~SIZE_MAX through the
+size_t conversion to wrap downstream length checks.
+
+Introduce read_int_bounded(), read_varint_bounded() and
+read_varint_size() in io.c so wire-derived integer ranges are
+checked at the read site rather than scattered across each
+caller, with RERR_PROTOCOL on out-of-range input.
+
+Apply the bounded primitives to:
+  - sum->count (checksum count -- previously could overflow
+    (size_t)count * xfer_sum_len on 32-bit with raised max-alloc)
+  - xattrs: count, name_len, datum_len, plus rel_pos overflow
+    detect to stop chain wrapping the num accumulator
+  - acls: ida-entry count
+  - flist: file mode S_IFMT validation, modtime_nsec range check
+  - delete-stat counters in main: per-summand cap so the total
+    can't overflow a signed 32-bit accumulator
+
+Reporters include Joshua Rogers (checksum-count overflow finding).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ acls.c   |  2 +-
+ flist.c  | 17 ++++++++++++++---
+ io.c     | 54 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ main.c   | 10 +++++-----
+ rsync.h  | 17 +++++++++++++++++
+ xattrs.c | 16 ++++++++++++----
+ 6 files changed, 103 insertions(+), 13 deletions(-)
+
+diff --git a/acls.c b/acls.c
+index 4d67ff4d..c60a7087 100644
+--- a/acls.c
++++ b/acls.c
+@@ -697,7 +697,7 @@ static uint32 recv_acl_access(int f, uchar *name_follows_ptr)
+ static uchar recv_ida_entries(int f, ida_entries *ent)
+ {
+ 	uchar computed_mask_bits = 0;
+-	int i, count = read_varint(f);
++	int i, count = read_varint_bounded(f, 0, MAX_WIRE_ACL_COUNT, "ACL count");
+ 
+ 	ent->idas = count ? new_array(id_access, count) : NULL;
+ 	ent->count = count;
+diff --git a/flist.c b/flist.c
+index 17832533..30eeada6 100644
+--- a/flist.c
++++ b/flist.c
+@@ -840,9 +840,9 @@ static struct file_struct *recv_file_entry(int f, struct file_list *flist, int x
+ 	}
+ 	if (xflags & XMIT_MOD_NSEC)
+ #ifndef CAN_SET_NSEC
+-		(void)read_varint(f);
++		(void)read_varint_bounded(f, 0, MAX_WIRE_NSEC, "modtime_nsec");
+ #else
+-		modtime_nsec = read_varint(f);
++		modtime_nsec = read_varint_bounded(f, 0, MAX_WIRE_NSEC, "modtime_nsec");
+ 	else
+ 		modtime_nsec = 0;
+ #endif
+@@ -861,8 +861,19 @@ static struct file_struct *recv_file_entry(int f, struct file_list *flist, int x
+ #endif
+ 	}
+ #endif
+-	if (!(xflags & XMIT_SAME_MODE))
++	if (!(xflags & XMIT_SAME_MODE)) {
+ 		mode = from_wire_mode(read_int(f));
++		/* Reject modes whose type bits are not one of the standard
++		 * file types; otherwise garbage mode values propagate through
++		 * the file-type checks below unpredictably. */
++		if (!S_ISREG(mode) && !S_ISDIR(mode) && !S_ISLNK(mode)
++		 && !S_ISCHR(mode) && !S_ISBLK(mode)
++		 && !S_ISFIFO(mode) && !S_ISSOCK(mode)) {
++			rprintf(FERROR, "invalid file mode 0%o for %s [%s]\n",
++				(unsigned)mode, lastname, who_am_i());
++			exit_cleanup(RERR_PROTOCOL);
++		}
++	}
+ 	if (atimes_ndx && !S_ISDIR(mode) && !(xflags & XMIT_SAME_ATIME)) {
+ 		atime = read_varlong(f, 4);
+ #if SIZEOF_TIME_T < SIZEOF_INT64
+diff --git a/io.c b/io.c
+index 2d94c1f4..eb316383 100644
+--- a/io.c
++++ b/io.c
+@@ -1868,6 +1868,45 @@ int64 read_varlong(int f, uchar min_bytes)
+ 	return u.x;
+ }
+ 
++/* Read an int32 and verify lo <= v <= hi. On out-of-range, abort with a
++ * protocol error naming "what". The bound is co-located with the read so it
++ * cannot be forgotten by a downstream user. */
++int32 read_int_bounded(int f, int32 lo, int32 hi, const char *what)
++{
++	int32 v = read_int(f);
++	if (v < lo || v > hi) {
++		rprintf(FERROR, "wire value %s out of range: %ld not in [%ld,%ld] [%s]\n",
++			what, (long)v, (long)lo, (long)hi, who_am_i());
++		exit_cleanup(RERR_PROTOCOL);
++	}
++	return v;
++}
++
++/* As read_int_bounded but for varint-encoded values. */
++int32 read_varint_bounded(int f, int32 lo, int32 hi, const char *what)
++{
++	int32 v = read_varint(f);
++	if (v < lo || v > hi) {
++		rprintf(FERROR, "wire value %s out of range: %ld not in [%ld,%ld] [%s]\n",
++			what, (long)v, (long)lo, (long)hi, who_am_i());
++		exit_cleanup(RERR_PROTOCOL);
++	}
++	return v;
++}
++
++/* Read a varint that will be used as a size_t. Rejects negative values
++ * (which would wrap to ~SIZE_MAX) and values exceeding the supplied max. */
++size_t read_varint_size(int f, size_t max, const char *what)
++{
++	int32 v = read_varint(f);
++	if (v < 0 || (size_t)v > max) {
++		rprintf(FERROR, "wire size %s out of range: %ld > %lu [%s]\n",
++			what, (long)v, (unsigned long)max, who_am_i());
++		exit_cleanup(RERR_PROTOCOL);
++	}
++	return (size_t)v;
++}
++
+ int64 read_longint(int f)
+ {
+ #if SIZEOF_INT64 >= 8
+@@ -1974,6 +2013,21 @@ void read_sum_head(int f, struct sum_struct *sum)
+ 			(long)sum->count, who_am_i());
+ 		exit_cleanup(RERR_PROTOCOL);
+ 	}
++	/* Guard against integer overflow in downstream allocations sized by
++	 * count*element_size. my_alloc uses divide-not-multiply so it is
++	 * already wraparound-safe, but checking here gives a clearer error
++	 * and also covers the (size_t)count * xfer_sum_len arithmetic that
++	 * is performed *before* reaching my_alloc. */
++	if (xfer_sum_len > 0 && (size_t)sum->count > SIZE_MAX / (size_t)xfer_sum_len) {
++		rprintf(FERROR, "Invalid checksum count %ld (too large) [%s]\n",
++			(long)sum->count, who_am_i());
++		exit_cleanup(RERR_PROTOCOL);
++	}
++	if ((size_t)sum->count > SIZE_MAX / sizeof(struct sum_buf)) {
++		rprintf(FERROR, "Invalid checksum count %ld (sum_buf overflow) [%s]\n",
++			(long)sum->count, who_am_i());
++		exit_cleanup(RERR_PROTOCOL);
++	}
+ 	sum->blength = read_int(f);
+ 	if (sum->blength < 0 || sum->blength > max_blength) {
+ 		rprintf(FERROR, "Invalid block length %ld [%s]\n",
+diff --git a/main.c b/main.c
+index 4f070acc..e6dc134c 100644
+--- a/main.c
++++ b/main.c
+@@ -239,11 +239,11 @@ void write_del_stats(int f)
+ 
+ void read_del_stats(int f)
+ {
+-	stats.deleted_files = read_varint(f);
+-	stats.deleted_files += stats.deleted_dirs = read_varint(f);
+-	stats.deleted_files += stats.deleted_symlinks = read_varint(f);
+-	stats.deleted_files += stats.deleted_devices = read_varint(f);
+-	stats.deleted_files += stats.deleted_specials = read_varint(f);
++	stats.deleted_files = read_varint_bounded(f, 0, MAX_WIRE_DEL_STAT, "deleted_files");
++	stats.deleted_files += stats.deleted_dirs = read_varint_bounded(f, 0, MAX_WIRE_DEL_STAT, "deleted_dirs");
++	stats.deleted_files += stats.deleted_symlinks = read_varint_bounded(f, 0, MAX_WIRE_DEL_STAT, "deleted_symlinks");
++	stats.deleted_files += stats.deleted_devices = read_varint_bounded(f, 0, MAX_WIRE_DEL_STAT, "deleted_devices");
++	stats.deleted_files += stats.deleted_specials = read_varint_bounded(f, 0, MAX_WIRE_DEL_STAT, "deleted_specials");
+ }
+ 
+ static void become_copy_as_user()
+diff --git a/rsync.h b/rsync.h
+index 479ac484..4d40542e 100644
+--- a/rsync.h
++++ b/rsync.h
+@@ -163,6 +163,23 @@
+ /* For compatibility with older rsyncs */
+ #define OLD_MAX_BLOCK_SIZE ((int32)1 << 29)
+ 
++/* Policy ceilings on attacker-controlled wire values. Picked well above any
++ * legitimate filesystem / protocol traffic but well below sizes that could
++ * cause integer overflow or DoS-grade allocations. See input_checking.txt.
++ *
++ * Note on MAX_WIRE_XATTR_DATALEN: xattr datum size is bounded only by the
++ * wire-format maximum (signed int32 varint, ~2GB). macOS resource forks
++ * are transferred as the com.apple.ResourceFork xattr and can legitimately
++ * be many GB; --max-alloc (default 1GB, configurable) is the real
++ * allocation cap. read_varint_size() still rejects negative values so a
++ * hostile peer cannot wrap to ~SIZE_MAX. */
++#define MAX_WIRE_XATTR_COUNT   65536
++#define MAX_WIRE_XATTR_NAMELEN 4096
++#define MAX_WIRE_XATTR_DATALEN ((int32)0x7fffffff)
++#define MAX_WIRE_ACL_COUNT     65536
++#define MAX_WIRE_NSEC          999999999
++#define MAX_WIRE_DEL_STAT      ((int32)1 << 30)
++
+ #define ROUND_UP_1024(siz) ((siz) & (1024-1) ? ((siz) | (1024-1)) + 1 : (siz))
+ 
+ #define IOERR_GENERAL	(1<<0) /* For backward compatibility, this must == 1 */
+diff --git a/xattrs.c b/xattrs.c
+index 5f740bb5..99795f24 100644
+--- a/xattrs.c
++++ b/xattrs.c
+@@ -697,6 +697,13 @@ int recv_xattr_request(struct file_struct *file, int f_in)
+ 	rxa = lst->items;
+ 	num = 0;
+ 	while ((rel_pos = read_varint(f_in)) != 0) {
++		/* Detect signed overflow before the accumulating add. A hostile
++		 * peer could otherwise wrap 'num' to land on an arbitrary value. */
++		if ((rel_pos > 0 && num > INT_MAX - rel_pos)
++		 || (rel_pos < 0 && num < INT_MIN - rel_pos)) {
++			rprintf(FERROR, "xattr rel_pos accumulation overflow [%s]\n", who_am_i());
++			exit_cleanup(RERR_PROTOCOL);
++		}
+ 		num += rel_pos;
+ 		if (am_sender) {
+ 			/* The sender-related num values are only in order on the sender.
+@@ -742,7 +749,7 @@ int recv_xattr_request(struct file_struct *file, int f_in)
+ 		}
+ 
+ 		old_datum = rxa->datum;
+-		rxa->datum_len = read_varint(f_in);
++		rxa->datum_len = read_varint_size(f_in, MAX_WIRE_XATTR_DATALEN, "xattr datum_len");
+ 
+ 		if (SIZE_MAX - rxa->name_len < rxa->datum_len)
+ 			overflow_exit("recv_xattr_request");
+@@ -783,7 +790,8 @@ void receive_xattr(int f, struct file_struct *file)
+ 		return;
+ 	}
+ 
+-	if ((count = read_varint(f)) != 0) {
++	count = read_varint_bounded(f, 0, MAX_WIRE_XATTR_COUNT, "xattr count");
++	if (count != 0) {
+ 		(void)EXPAND_ITEM_LIST(&temp_xattr, rsync_xa, count);
+ 		temp_xattr.count = 0;
+ 	}
+@@ -791,8 +799,8 @@ void receive_xattr(int f, struct file_struct *file)
+ 	for (num = 1; num <= count; num++) {
+ 		char *ptr, *name;
+ 		rsync_xa *rxa;
+-		size_t name_len = read_varint(f);
+-		size_t datum_len = read_varint(f);
++		size_t name_len = read_varint_size(f, MAX_WIRE_XATTR_NAMELEN, "xattr name_len");
++		size_t datum_len = read_varint_size(f, MAX_WIRE_XATTR_DATALEN, "xattr datum_len");
+ 		size_t dget_len = datum_len > MAX_FULL_DATUM ? 1 + (size_t)xattr_sum_len : datum_len;
+ 		size_t extra_len = MIGHT_NEED_RPRE ? RPRE_LEN : 0;
+ 		if (SIZE_MAX - dget_len < extra_len || SIZE_MAX - dget_len - extra_len < name_len)
+-- 
+2.51.0
+

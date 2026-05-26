@@ -1,0 +1,26 @@
+From 79ffc5e3c5b9337a5840ab019107ca8c44a97eb4 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Mon, 19 Jan 2026 11:14:40 +1100
+Subject: [PATCH 11/38] acl: fixed ACL ID mapping for non-root
+
+closes issue #618
+---
+ acls.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/acls.c b/acls.c
+index bd119e8e..4d67ff4d 100644
+--- a/acls.c
++++ b/acls.c
+@@ -713,7 +713,7 @@ static uchar recv_ida_entries(int f, ida_entries *ent)
+ 			else
+ 				id = recv_group_name(f, id, NULL);
+ 		} else if (access & NAME_IS_USER) {
+-			if (inc_recurse && am_root && !numeric_ids)
++			if (inc_recurse && !numeric_ids)
+ 				id = match_uid(id);
+ 		} else {
+ 			if (inc_recurse && (!am_root || !numeric_ids))
+-- 
+2.51.0
+

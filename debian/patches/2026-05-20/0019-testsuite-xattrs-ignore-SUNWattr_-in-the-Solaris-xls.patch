@@ -1,0 +1,45 @@
+From 3e5e159459fbb46b01517d5f9e6f98d914bab861 Mon Sep 17 00:00:00 2001
+From: Andrew Tridgell <andrew@tridgell.net>
+Date: Thu, 30 Apr 2026 08:18:01 +1000
+Subject: [PATCH 19/38] testsuite/xattrs: ignore SUNWattr_* in the Solaris xls
+ helper
+
+The Solaris xls() function listed every entry in the file's xattr
+directory, which on Solaris includes OS-managed SUNWattr_ro and
+SUNWattr_rw pseudo-attributes. SUNWattr_rw embeds the file creation
+time, so its bytes naturally differ between the source and destination
+files, making the xattrs and xattrs-hlink tests fail with diffs that
+have nothing to do with rsync.
+
+Rsync's own listxattr wrapper already filters these out
+(lib/sysxattrs.c), so the right fix is to filter them in the test
+display too. Other platforms are unaffected because each has its own
+xls() branch in the case statement.
+
+With the test now actually passing on Solaris, drop the CI hack that
+overwrote testsuite/xattrs.test with a skip stub.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ testsuite/xattrs.test | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/testsuite/xattrs.test b/testsuite/xattrs.test
+index d94d5f95..c0f3784b 100644
+--- a/testsuite/xattrs.test
++++ b/testsuite/xattrs.test
+@@ -38,7 +38,10 @@ EOF
+     xls() {
+ 	for fn in "${@}"; do
+ 	    runat "$fn" "$SHELL_PATH" <<EOF
+-for x in *; do echo "\$x=\`cat \$x\`"; done
++for x in *; do
++    case "\$x" in SUNWattr_*) continue;; esac
++    echo "\$x=\`cat \$x\`"
++done
+ EOF
+        done
+     }
+-- 
+2.51.0
+

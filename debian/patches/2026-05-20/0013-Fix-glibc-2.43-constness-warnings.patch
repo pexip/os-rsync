@@ -1,0 +1,115 @@
+From 6994fdf50ef0dde11b8b014a6d198c6f423d67fc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Holger=20Hoffst=C3=A4tte?= <holger@applied-asynchrony.com>
+Date: Mon, 6 Apr 2026 00:44:02 +0200
+Subject: [PATCH 13/38] Fix glibc-2.43 constness warnings
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Glibc 2.43 added C23 const-preserving overloads to various string functions,
+which change the return type depending on the constness of the argument(s).
+Currently this leads to warnings from calls to strtok() or strchr().
+Fix this by properly declaring the respective variable types.
+
+Signed-off-by: Holger Hoffstätte <holger@applied-asynchrony.com>
+---
+ access.c   | 2 +-
+ checksum.c | 2 +-
+ compat.c   | 4 ++--
+ exclude.c  | 2 +-
+ io.c       | 4 ++--
+ loadparm.c | 2 +-
+ 6 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/access.c b/access.c
+index b6afce37..b924e0a3 100644
+--- a/access.c
++++ b/access.c
+@@ -99,7 +99,7 @@ static void make_mask(char *mask, int plen, int addrlen)
+ 	return;
+ }
+ 
+-static int match_address(const char *addr, const char *tok)
++static int match_address(const char *addr, char *tok)
+ {
+ 	char *p;
+ 	struct addrinfo hints, *resa, *rest;
+diff --git a/checksum.c b/checksum.c
+index 6f0f95ab..24e46bfb 100644
+--- a/checksum.c
++++ b/checksum.c
+@@ -176,7 +176,7 @@ void parse_checksum_choice(int final_call)
+ 	if (valid_checksums.negotiated_nni)
+ 		xfer_sum_nni = file_sum_nni = valid_checksums.negotiated_nni;
+ 	else {
+-		char *cp = checksum_choice ? strchr(checksum_choice, ',') : NULL;
++		const char *cp = checksum_choice ? strchr(checksum_choice, ',') : NULL;
+ 		if (cp) {
+ 			xfer_sum_nni = parse_csum_name(checksum_choice, cp - checksum_choice);
+ 			file_sum_nni = parse_csum_name(cp+1, -1);
+diff --git a/compat.c b/compat.c
+index 4ce8c6d0..37d20f4f 100644
+--- a/compat.c
++++ b/compat.c
+@@ -131,7 +131,7 @@ static const char *client_info;
+  * of that protocol for it to be advertised as available. */
+ static void check_sub_protocol(void)
+ {
+-	char *dot;
++	const char *dot;
+ 	int their_protocol, their_sub;
+ 	int our_sub = get_subprotocol_version();
+ 
+@@ -414,7 +414,7 @@ static const char *getenv_nstr(int ntype)
+ 		env_str = ntype == NSTR_COMPRESS ? "zlib" : protocol_version >= 30 ? "md5" : "md4";
+ 
+ 	if (am_server && env_str) {
+-		char *cp = strchr(env_str, '&');
++		const char *cp = strchr(env_str, '&');
+ 		if (cp)
+ 			env_str = cp + 1;
+ 	}
+diff --git a/exclude.c b/exclude.c
+index 87edbcf7..24de64f8 100644
+--- a/exclude.c
++++ b/exclude.c
+@@ -904,7 +904,7 @@ static int rule_matches(const char *fname, filter_rule *ex, int name_flags)
+ {
+ 	int slash_handling, str_cnt = 0, anchored_match = 0;
+ 	int ret_match = ex->rflags & FILTRULE_NEGATE ? 0 : 1;
+-	char *p, *pattern = ex->pattern;
++	const char *p, *pattern = ex->pattern;
+ 	const char *strings[16]; /* more than enough */
+ 	const char *name = fname + (*fname == '/');
+ 
+diff --git a/io.c b/io.c
+index bb60eeca..8d1cf7f2 100644
+--- a/io.c
++++ b/io.c
+@@ -1158,8 +1158,8 @@ void set_io_timeout(int secs)
+ 
+ static void check_for_d_option_error(const char *msg)
+ {
+-	static char rsync263_opts[] = "BCDHIKLPRSTWabceghlnopqrtuvxz";
+-	char *colon;
++	static const char rsync263_opts[] = "BCDHIKLPRSTWabceghlnopqrtuvxz";
++	const char *colon;
+ 	int saw_d = 0;
+ 
+ 	if (*msg != 'r'
+diff --git a/loadparm.c b/loadparm.c
+index 3906bc0f..4f371d77 100644
+--- a/loadparm.c
++++ b/loadparm.c
+@@ -178,7 +178,7 @@ static char *expand_vars(const char *str)
+ 
+ 	for (t = buf, f = str; bufsize && *f; ) {
+ 		if (*f == '%' && isUpper(f+1)) {
+-			char *percent = strchr(f+1, '%');
++			const char *percent = strchr(f+1, '%');
+ 			if (percent && percent - f < bufsize) {
+ 				char *val;
+ 				strlcpy(t, f+1, percent - f);
+-- 
+2.51.0
+
