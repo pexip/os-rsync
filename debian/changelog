@@ -1,3 +1,12 @@
+rsync (3.4.1+ds1-5+deb13u4) trixie; urgency=medium
+
+  * Non-maintainer upload.
+  * Import upstream patch to reject overlong HTTP proxy response lines,
+    avoiding a one byte out of bounds stack write when using RSYNC_PROXY.
+    (CVE-2026-45232).
+
+ -- Aquila Macedo Costa <aquila@debian.org>  Mon, 01 Jun 2026 14:03:48 -0400
+
 rsync (3.4.1+ds1-5+deb13u3) trixie-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
