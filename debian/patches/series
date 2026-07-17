@@ -38,3 +38,4 @@ fix-flaky-hardlinks-test.patch
 2026-05-20/0034-defence-in-depth-bound-wire-supplied-counts-and-leng.patch
 2026-05-20/0035-defence-in-depth-guard-cumulative-snprintf-against-l.patch
 2026-05-20/0036-defence-in-depth-receiver-block-index-bounds-read_de.patch
+CVE-2026-45232.patch
