@@ -32,7 +32,7 @@ index e71818c..0bdf78e 100755
  # that the code in options.c might send to the server.  The resulting code is then
  # included in the rrsync script.
 diff --git a/rsync-ssl b/rsync-ssl
-index 56ee7df..d76f0ab 100755
+index 8aa2ae6..3880f99 100755
 --- a/rsync-ssl
 +++ b/rsync-ssl
 @@ -1,4 +1,4 @@
@@ -82,7 +82,7 @@ index a47d7f8..bb5c3a8 100755
  # directives that can be used by rsync to copy just the indicated files using
  # an --exclude-from=FILE or -f'. FILE' option. To be able to delete files on
 diff --git a/support/git-set-file-times b/support/git-set-file-times
-index e06f073..56d4ba0 100755
+index 23fdbd1..20d613f 100755
 --- a/support/git-set-file-times
 +++ b/support/git-set-file-times
 @@ -1,4 +1,4 @@
@@ -90,7 +90,7 @@ index e06f073..56d4ba0 100755
 +#!/usr/bin/python3
  
  import os, re, argparse, subprocess
- from datetime import datetime
+ from datetime import datetime, timezone
 diff --git a/support/logfilter b/support/logfilter
 index 29cfe69..282914a 100755
 --- a/support/logfilter
@@ -132,7 +132,7 @@ index e7a5474..cfb0c40 100755
  # "/rsyncd-munged/" or remove that prefix.
  
 diff --git a/support/rrsync b/support/rrsync
-index e8b0cc0..d3ccd48 100755
+index e114570..13549a1 100755
 --- a/support/rrsync
 +++ b/support/rrsync
 @@ -1,4 +1,4 @@
@@ -142,7 +142,7 @@ index e8b0cc0..d3ccd48 100755
  # Restricts rsync to subdirectory declared in .ssh/authorized_keys.  See
  # the rrsync man page for details of how to make use of this script.
 diff --git a/support/rsync-no-vanished b/support/rsync-no-vanished
-index b31a5d2..c85d488 100755
+index 892c90b..8da38e7 100755
 --- a/support/rsync-no-vanished
 +++ b/support/rsync-no-vanished
 @@ -1,4 +1,4 @@

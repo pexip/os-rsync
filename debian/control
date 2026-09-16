@@ -12,7 +12,7 @@ Build-Depends: debhelper-compat (= 13),
                zlib1g-dev,
                libssl-dev,
                python3:native,
-               python3-cmarkgfm:native [!hppa] | python3-commonmark [hppa],
+               python3-cmarkgfm:native,
                acl <!nocheck>,
                attr <!nocheck>,
 Standards-Version: 4.7.0

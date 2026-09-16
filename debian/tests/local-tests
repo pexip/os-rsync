@@ -66,14 +66,18 @@ testMtimeSyncForFileIfTargetNewer() {
 }
 
 testMtimeSyncForFileIfTargetNewerUpdate(){
-    startSkipping  # FIXME: remove skipping once 285 <= diffoscope > 300 (in all suites?)
+    # Skipped on trixie: diffoscope 297 exits 0 for byte-identical files
+    # that only differ in metadata (reproducible-builds/diffoscope#411),
+    # so the mtime difference this test relies on is never reported.
+    # Fixed in diffoscope 300, which is not available in trixie.
+    startSkipping
     echo foo > src
     cp src target
     touch -d "next minute" target
 
     $RSYNC_BIN --times --update src "$TARGET_DIR"/target
 
-    $DIFF_CMD --exclude-directory-metadata=no src target 2>&1
+    $DIFF_CMD --exclude-directory-metadata=no src target > /dev/null 2>&1
     status=$?
     assertFalse 'Failed mtime sync for newer target with -u flag' $status
     endSkipping
@@ -97,7 +101,7 @@ testChecksumFileComparison() {
     touch -d "@1750044444" src.txt
     $RSYNC_BIN src.txt "$TARGET_DIR"/target.txt
 
-    $DIFF_CMD src.txt target.txt 2>&1
+    $DIFF_CMD src.txt target.txt > /dev/null 2>&1
     assertFalse "Rsync unexpectedly synced file of same size and mtime" "$?"
 
     $RSYNC_BIN --checksum src.txt "$TARGET_DIR"/target.txt

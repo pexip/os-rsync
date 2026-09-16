@@ -1,0 +1,673 @@
+From a287b7e5429aeb5e66904a520f0074cceaaa5dc9 Mon Sep 17 00:00:00 2001
+From: seks99x <omarelsayed161@gmail.com>
+Date: Tue, 8 Sep 2026 00:37:06 +0300
+Subject: [PATCH] Fix handling of /dev/std{in,out,err} pseudo-paths and
+ namespace overflow UID checks
+
+Using --log-file or --files-from with /dev/stdin, /dev/stdout, or /dev/stderr
+attached to a pipe previously failed in two ways:
+
+1. On standard hosts, it failed with ENOENT because the symlink target
+   (pipe:[N]) was treated as a relative file path rather than a secure
+   kernel pseudo-path.
+2. Inside user namespaces (e.g., rootless podman, unshare), it aborted
+   with ELOOP ("refusing to follow a symlink owned by an untrusted user").
+   The symlink ownership reported the kernel overflow UID (65534), which
+   completely blocked the walker from following the pseudo-paths.
+
+This patch resolves the issues by refining the symlink path walker and
+trust mechanisms:
+
+* Updated fd_pin_tail() to natively recognize /dev/stdin, /dev/stdout,
+  and /dev/stderr, parsing them directly to their corresponding /0, /1,
+  and /2 descriptor tails.
+* Introduced the is_anchored variable to strictly enforce absolute paths,
+  ensuring malformed paths cannot bypass the check using relative forms
+  like dev/fd/ or proc/self/.
+* Removed pin_transit from the namespace_pin check and replaced it by
+  adding the is_anchored variable to the check. Checking for root confinement
+  or daemon status is unnecessary when we are already validating and restricting
+  traversal to known safe paths (Daemon also refuses any symlinks pointing to /).
+* Added new cases to the test suite to validate standard stream pseudo-path
+  handling and ensure namespace overflow UID bypasses work correctly
+  without regression.
+---
+ syscall.c                             |  83 ++++++----
+ testsuite/pseudo-paths-daemon_test.py | 223 ++++++++++++++++++++++++++
+ testsuite/pseudo-paths_test.py        | 218 +++++++++++++++++++++++++
+ testsuite/skiplist/almalinux-8.txt    |   1 +
+ testsuite/skiplist/cygwin.txt         |   1 +
+ testsuite/skiplist/macos.txt          |   1 +
+ 6 files changed, 497 insertions(+), 30 deletions(-)
+ create mode 100644 testsuite/pseudo-paths-daemon_test.py
+
+diff --git a/syscall.c b/syscall.c
+index 81e12f906..1553f4716 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -162,29 +162,43 @@ static const char *confinement_root(unsigned int *lenp)
+  * is not in an fd-pin namespace. */
+ static const char *fd_pin_tail(const char *p)
+ {
+-	const char *s;
+-
+-	if (strncmp(p, "/dev/fd", 7) == 0) {
+-		s = p + 7;
+-		return (*s == '\0' || *s == '/') ? s : NULL;
+-	}
+-
+-	if (strncmp(p, "/proc/", 6) != 0)
+-		return NULL;
+-	s = p + 6;
+-	if (strncmp(s, "self/", 5) == 0)	/* "/proc/self/..." */
+-		s += 4;
+-	else {					/* "/proc/<pid>/..." */
+-		const char *d = s;
+-		while (*s >= '0' && *s <= '9')
+-			s++;
+-		if (s == d || *s != '/')
+-			return NULL;
+-	}
+-	if (strncmp(s, "/fd", 3) != 0)
+-		return NULL;
+-	s += 3;
+-	return (*s == '\0' || *s == '/') ? s : NULL;
++    const char *s;
++
++    /* Group all /dev/ checks under a single prefix comparison */
++    if (strncmp(p, "/dev/", 5) == 0) {
++        s = p + 5;
++        if (strncmp(s, "fd", 2) == 0) {
++            s += 2;
++            return (*s == '\0' || *s == '/') ? s : NULL;
++        }
++        if (strncmp(s, "std", 3) == 0) {
++            s += 3;
++            if (strncmp(s, "in", 3) == 0)
++                return "/0";
++            if (strncmp(s, "out", 4) == 0)
++                return "/1";
++            if (strncmp(s, "err", 4) == 0)
++                return "/2";
++        }
++        return NULL; /* Instantly reject any other /dev/ path */
++    }
++
++    if (strncmp(p, "/proc/", 6) != 0)
++        return NULL;
++    s = p + 6;
++    if (strncmp(s, "self/", 5) == 0)    /* "/proc/self/..." */
++        s += 4;
++    else {                  /* "/proc/<pid>/..." */
++        const char *d = s;
++        while (*s >= '0' && *s <= '9')
++            s++;
++        if (s == d || *s != '/')
++            return NULL;
++    }
++    if (strncmp(s, "/fd", 3) != 0)
++        return NULL;
++    s += 3;
++    return (*s == '\0' || *s == '/') ? s : NULL;
+ }
+ 
+ /* An EXACT pin entry, such as "/proc/self/fd/7" or "/dev/fd/7", whose target is
+@@ -347,6 +361,10 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 			return -1;
+ 	}
+ 
++	/* Tracker: 1 if we are genuinely walking from the system root,
++     * 0 if we are walking a relative path where abspath_step will fake a '/' */
++	int is_anchored = (abspath[0] != '\0');
++
+ 	/* An fd pin (rrsync rewrites an option path to /proc/self/fd/N so no
+ 	 * later symlink can redirect it) is spelled outside the root by
+ 	 * construction, so the walk has to be allowed through /proc/self/fd to
+@@ -373,6 +391,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 			return -1;
+ 		dfd_owns = 1;
+ 		abspath[0] = '\0';			/* now resolving from "/" */
++		is_anchored = 1;
+ 		char *p = remaining;
+ 		while (*p == '/') p++;
+ 		memmove(remaining, p, strlen(p) + 1);
+@@ -422,12 +441,15 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 
+ 		if (S_ISLNK(lst.st_mode)) {
+ 			/* Symlink: untrusted owner is refused; trusted owner is followed
+-			 * via readlinkat + splice.  In a user namespace the /proc/self and
+-			 * /dev/fd symlinks may report the overflow uid, so
+-			 * allow those exact components while traversing a recognised pin. */
+-			int namespace_pin = pin_transit
+-				&& ((strcmp(abspath, "/proc") == 0 && strcmp(comp, "self") == 0)
+-				 || (strcmp(abspath, "/dev") == 0 && strcmp(comp, "fd") == 0));
++			 * via readlinkat + splice.  In a user namespace the /proc/self,
++			 * /dev/fd and /dev/std* symlinks may report the overflow uid, so
++             * allow those exact components while traversing a recognised pin. */
++            int namespace_pin = is_anchored
++                && ((strcmp(abspath, "/proc") == 0 && strcmp(comp, "self") == 0)
++                 || (strcmp(abspath, "/dev") == 0 && (strcmp(comp, "fd") == 0
++                    || strcmp(comp, "stdin") == 0
++                    || strcmp(comp, "stdout") == 0
++                    || strcmp(comp, "stderr") == 0)));
+ 			if (!namespace_pin && lst.st_uid != 0 && lst.st_uid != trusted_uid) {
+ 				rprintf(FERROR,
+ 					"refusing to follow a symlink owned by an untrusted user; "
+@@ -451,7 +473,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 			/* Detect Linux kernel pseudo-paths (pipes, sockets, anon_inodes).
+ 			 * These are not real paths on disk and never contain slashes. */
+ 			const char *abstail = fd_pin_tail(abspath);
+-			int is_fd_dir = (abstail != NULL && *abstail == '\0' && ptail != NULL);
++			int is_fd_dir = (abstail != NULL && *abstail == '\0' && is_anchored);
+ 			if (is_fd_dir && (strncmp(target, "pipe:[", 6) == 0
+ 			    || strncmp(target, "socket:[", 8) == 0
+ 			    || strncmp(target, "anon_inode:", 11) == 0)) {
+@@ -510,6 +532,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 				/* "self" resolves to "<pid>", still inside the pin;
+ 				 * the magic link itself lands elsewhere and ends the
+ 				 * exemption.  Never turns back on. */
++				is_anchored = 1;
+ 				pin_transit = pin_transit && fd_pin_tail(rebuilt) != NULL;
+ 				char *p = rebuilt;
+ 				while (*p == '/') p++;
+diff --git a/testsuite/pseudo-paths-daemon_test.py b/testsuite/pseudo-paths-daemon_test.py
+new file mode 100644
+index 000000000..daab15fd2
+--- /dev/null
++++ b/testsuite/pseudo-paths-daemon_test.py
+@@ -0,0 +1,223 @@
++"""Regression test for daemon log file silent failures with process substitution and pipes."""
++
++import os
++import signal
++import shutil
++import socket
++import subprocess
++import sys
++import tempfile
++import time
++from pathlib import Path
++
++from rsyncfns import makepath, rmtree, rsync_argv, test_fail, test_skipped
++
++if not sys.platform.startswith('linux'):
++    test_skipped('Namespace daemon testing is a Linux-specific feature')
++    raise SystemExit(0)
++
++bash = shutil.which('bash')
++if not bash:
++    test_skipped('bash is not installed')
++    raise SystemExit(0)
++
++probe_bash = subprocess.run([bash, '-c', 'echo "probe" > >(cat > /dev/null)'], capture_output=True)
++if probe_bash.returncode != 0:
++    test_skipped('bash process substitution is not supported on this system')
++    raise SystemExit(0)
++
++def kill_daemon(proc):
++    """Safely terminate the daemon process group if it is still running."""
++    if proc.poll() is not None:
++        return
++    try:
++        os.killpg(proc.pid, signal.SIGTERM)
++    except ProcessLookupError:
++        pass
++    try:
++        proc.wait(timeout=3)
++    except subprocess.TimeoutExpired:
++        try:
++            os.killpg(proc.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        proc.wait()
++
++ws_base = Path(tempfile.mkdtemp(prefix='rsync-pseudo-paths-daemon-'))
++ws_base.chmod(0o777)
++
++try:
++    ws_src = ws_base / 'src'
++    makepath(ws_src)
++    ws_src.chmod(0o777)
++
++    tf = ws_src / 'file.txt'
++    tf.write_text('data\n')
++    tf.chmod(0o777)
++
++    rsync_bin = rsync_argv()[0]
++    if not Path(rsync_bin).exists():
++        test_fail(f"rsync binary not found at {rsync_bin}")
++
++    base_port = 20000 + (os.getpid() % 10000)
++
++    # -------------------------------------------------------------------------
++    # TEST 1: Host Daemon (Normal Root) with > >(...) process substitution
++    # -------------------------------------------------------------------------
++    port_host = base_port
++    print(f"Running Test 1: Host Daemon (Normal Root) with > >(cat > out) (Port {port_host})...", flush=True)
++
++    dest_host = ws_base / 'dest_host'
++    makepath(dest_host)
++    dest_host.chmod(0o777)
++
++    out_host = ws_base / 'out_host'
++    err_host = ws_base / 'err_host'
++    conf_host = ws_base / 'host.conf'
++
++    conf_host.write_text(f"""pid file = {ws_base}/host.pid
++log file = /dev/stdout
++[test-from]
++path = {dest_host}
++read only = no
++use chroot = no
++""")
++
++    cmd_host = f"{rsync_bin} --daemon --no-detach --config={conf_host} --port={port_host} --address=127.0.0.1 > >(cat > {out_host}) 2> {err_host} < /dev/null"
++    
++    # Executes directly as the host user
++    daemon_host = subprocess.Popen([bash, '-c', cmd_host], start_new_session=True)
++    
++    try:
++        # Bounded readiness polling (Wait for daemon to bind to the port)
++        for _ in range(50):
++            if daemon_host.poll() is not None:
++                test_fail("Host Daemon crashed immediately upon startup.")
++            try:
++                with socket.create_connection(('127.0.0.1', port_host), timeout=0.1):
++                    break # Port is open, daemon is ready
++            except OSError:
++                time.sleep(0.1)
++        else:
++            test_fail("Host Daemon failed to bind to port within the timeout period.")
++
++        client_cmd_host = [rsync_bin, '-a', str(ws_src) + '/', f'rsync://127.0.0.1:{port_host}/test-from/']
++        client_proc = subprocess.run(client_cmd_host, capture_output=True, text=True)
++        
++        if client_proc.returncode != 0:
++            test_fail(f"Client transfer failed against Host Daemon. Stderr: {client_proc.stderr.strip()}")
++
++        # Poll up to a second for logs to flush through the pipe
++        for _ in range(10):
++            out_host_data = out_host.read_text() if out_host.exists() else ""
++            if "rsyncd version" in out_host_data and "test-from" in out_host_data:
++                break
++            time.sleep(0.1)
++
++    finally:
++        kill_daemon(daemon_host)
++
++    out_host_data = out_host.read_text() if out_host.exists() else ""
++    err_host_data = err_host.read_text() if err_host.exists() else ""
++
++    if "rsyncd version" not in out_host_data or "test-from" not in out_host_data:
++        test_fail(f"Bug reproduced: Host Daemon silently dropped logs.\n'out' file: {out_host_data}\n'err' file: {err_host_data}")
++
++    print("Test 1 Passed: Daemon successfully logged to out file on host.", flush=True)
++
++    # -------------------------------------------------------------------------
++    # TEST 2 SETUP: Namespace capabilities and configuration
++    # -------------------------------------------------------------------------
++    unshare = shutil.which('unshare')
++    if not unshare:
++        print("Test 2 Skipped: unshare is not installed", flush=True)
++        raise SystemExit(0)
++
++    launcher = []
++    if os.geteuid() == 0:
++        setpriv = shutil.which('setpriv')
++        if setpriv is None:
++            print("Test 2 Skipped: setpriv is unavailable for the root-run testsuite", flush=True)
++            raise SystemExit(0)
++        launcher = [setpriv, '--reuid=65534', '--regid=65534', '--clear-groups']
++
++    unshare_argv = [unshare, '--user', '--map-root-user', '--mount', '--pid', '--fork', '--mount-proc']
++
++    probe_unshare = subprocess.run(launcher + unshare_argv + ['true'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++    if probe_unshare.returncode != 0:
++        print("Test 2 Skipped: user namespace is unavailable with the required unprivileged launcher", flush=True)
++        raise SystemExit(0)
++
++    check_ns = (
++        "import os, sys\n"
++        "proc_uid = os.lstat('/proc/self').st_uid\n"
++        "if proc_uid in (0, os.geteuid()):\n"
++        "    sys.exit(22)\n"
++    )
++    probe_uid = subprocess.run(launcher + unshare_argv + [sys.executable, '-c', check_ns])
++    if probe_uid.returncode == 22:
++        print("Test 2 Skipped: /proc/self does not expose an overflow uid in this namespace", flush=True)
++        raise SystemExit(0)
++    elif probe_uid.returncode != 0:
++        test_fail(f'Namespace uid check failed (rc={probe_uid.returncode})')
++
++    ns_rsync_bin = ws_base / 'rsync-bin'
++    shutil.copy2(rsync_bin, ns_rsync_bin)
++    ns_rsync_bin.chmod(0o777)
++
++    # -------------------------------------------------------------------------
++    # TEST 2: Namespace Daemon with > >(...) process substitution
++    # -------------------------------------------------------------------------
++    port_ns = base_port + 1
++    print(f"Running Test 2: Namespace Daemon inside unshare --user (Port {port_ns})...", flush=True)
++
++    dest_ns = ws_base / 'dest_ns'
++    makepath(dest_ns)
++    dest_ns.chmod(0o777)
++
++    out_ns = ws_base / 'out_ns'
++    err_ns = ws_base / 'err_ns'
++    conf_ns = ws_base / 'ns.conf'
++
++    conf_ns.write_text(f"""pid file = {ws_base}/ns.pid
++log file = /dev/stdout
++[test-from]
++path = {dest_ns}
++read only = no
++use chroot = no
++""")
++
++    cmd_ns = f"{ns_rsync_bin} --daemon --no-detach --config={conf_ns} --port={port_ns} --address=127.0.0.1 > >(cat > {out_ns}) 2> {err_ns} < /dev/null"
++    
++    namespace_cmd = launcher + unshare_argv + [bash, '-c', cmd_ns]
++    daemon_ns = subprocess.Popen(namespace_cmd, stdin=subprocess.DEVNULL, start_new_session=True)
++    
++    try:
++        for _ in range(50):
++            if daemon_ns.poll() is not None:
++                test_fail("Namespace Daemon crashed immediately upon startup.")
++            try:
++                with socket.create_connection(('127.0.0.1', port_ns), timeout=0.1):
++                    break # Port is open, daemon is ready
++            except OSError:
++                time.sleep(0.1)
++        else:
++             test_fail("Namespace Daemon failed to bind to port within the timeout.")
++
++        time.sleep(0.2)
++
++    finally:
++        kill_daemon(daemon_ns)
++
++    out_ns_data = out_ns.read_text() if out_ns.exists() else ""
++    err_ns_data = err_ns.read_text() if err_ns.exists() else ""
++
++    if "rsyncd version" not in out_ns_data:
++        test_fail(f"Bug reproduced: Namespace Daemon silently dropped logs.\n'out' file: {out_ns_data}\n'err' file: {err_ns_data}")
++
++    print("Test 2 Passed: Daemon successfully logged inside unprivileged namespace.", flush=True)
++
++finally:
++    rmtree(ws_base)
++
++raise SystemExit(0)
+diff --git a/testsuite/pseudo-paths_test.py b/testsuite/pseudo-paths_test.py
+index f72b48ef2..65dce2459 100644
+--- a/testsuite/pseudo-paths_test.py
++++ b/testsuite/pseudo-paths_test.py
+@@ -1,9 +1,11 @@
+ """Process substitution /dev/fd/ write pipe pseudo-paths for --log-file must not crash and must successfully write logs, but must be rejected if confined root."""
+ 
++import os
+ import shlex
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ from rsyncfns import (
+@@ -134,5 +136,221 @@
+     rmtree(base)
+     test_fail('transfer continued after accepting a trailing pseudo-path component')
+ 
++# -------------------------------------------------------------------------
++# TEST 3: Standard I/O Symlinks (/dev/stdin, /dev/stdout) - Unconfined
++# -------------------------------------------------------------------------
++print("Running Test 3: Standard I/O Symlinks (/dev/stdin)...", flush=True)
++
++rmtree(dest)
++makepath(dest)
++(src / 'stdin_test.txt').write_text('stdin data\n')
++
++# 3A: --files-from=/dev/stdin
++# Piping printf directly into rsync forces /dev/stdin to resolve to pipe:[N]
++stdin_script = f'printf "stdin_test.txt\\n" | {rsync_base_cmd} --files-from=/dev/stdin {src_path} {dest_path}'
++proc_stdin = subprocess.run([bash, '-c', stdin_script], capture_output=True, text=True, timeout=10)
++
++if proc_stdin.returncode != 0:
++    test_fail(f'rsync failed to read --files-from=/dev/stdin (rc={proc_stdin.returncode}, stderr={proc_stdin.stderr.strip()!r})')
++
++if not (dest / 'stdin_test.txt').is_file():
++    test_fail(f'rsync failed to transfer file specified via /dev/stdin')
++
++print('Test 3A Passed: rsync successfully read files-from via /dev/stdin', flush=True)
++
++# -------------------------------------------------------------------------
++# TEST 3B: Nested Trusted Symlink to /dev/stdin
++# -------------------------------------------------------------------------
++rmtree(dest)
++makepath(dest)
++
++symlink_list = base / 'rsync.list'
++if symlink_list.is_symlink() or symlink_list.exists():
++    symlink_list.unlink()
++
++# Create the trusted nested symlink pointing to the kernel pipe
++symlink_list.symlink_to('/dev/stdin')
++
++symlink_script = f'printf "stdin_test.txt\\n" | {rsync_base_cmd} --files-from={shlex.quote(str(symlink_list))} {src_path} {dest_path}'
++proc_symlink = subprocess.run([bash, '-c', symlink_script], capture_output=True, text=True, timeout=10)
++
++if proc_symlink.returncode != 0:
++     test_fail(f'rsync failed with --files-from=rsync.list -> /dev/stdin (rc={proc_symlink.returncode}, stderr={proc_symlink.stderr.strip()!r})')
++
++if not (dest / 'stdin_test.txt').is_file():
++     test_fail(f'rsync failed to follow trusted symlink to /dev/stdin to read files-from list')
++
++print('Test 3B Passed: rsync successfully resolved a trusted nested symlink to /dev/stdin', flush=True)
++
++# -------------------------------------------------------------------------
++# TEST 3C: Spoofed Relative Path to Pseudo-pipe (Spoofed dev/fd/x)
++# -------------------------------------------------------------------------
++print("Running Test 3C: Spoofed Relative Path to Pseudo-pipe (dev/fd/99)...", flush=True)
++
++rmtree(dest)
++makepath(dest)
++
++# Create a local, relative 'dev/fd' structure inside our working directory
++spoofed_dev_fd = base / 'dev' / 'fd'
++makepath(spoofed_dev_fd)
++
++# Create a real file called 'pipe:[' with valid data
++spoofed_target = spoofed_dev_fd / 'pipe:['
++spoofed_target.write_text('transfer_me.txt\n')
++
++# Create a symlink named '99' that points to the literal file 'pipe:['
++spoofed_symlink = spoofed_dev_fd / '99'
++if spoofed_symlink.is_symlink() or spoofed_symlink.exists():
++    spoofed_symlink.unlink()
++spoofed_symlink.symlink_to('pipe:[')
++
++# Run rsync using --files-from targeting the spoofed path.
++spoofed_script = f'cd {shlex.quote(str(base))} && {rsync_base_cmd} --files-from=dev/fd/99 {src_path} {dest_path}'
++proc_spoofed = subprocess.run([bash, '-c', spoofed_script], capture_output=True, text=True, timeout=10)
++
++stderr_lower = proc_spoofed.stderr.lower()
++
++if "levels of symbolic links" in stderr_lower or "eloop" in stderr_lower:
++    test_fail(f'rsync failed with non-expected ELOOP error. The spoofed path was not treated as a normal file. (rc={proc_spoofed.returncode}, stderr={proc_spoofed.stderr.strip()!r})')
++
++if proc_spoofed.returncode != 0:
++    test_fail(f'rsync unexpectedly did not complete the transfer! (stderr={proc_spoofed.stderr.strip()!r})')
++
++print('Test 3C Passed: rsync correctly treated the un-anchored spoofed path as a normal file rather than a kernel pseudo-path.', flush=True)
++
++# -------------------------------------------------------------------------
++# SETUP FOR NAMESPACE TESTS (TEST 4)
++# -------------------------------------------------------------------------
++unshare = shutil.which('unshare')
++if unshare is None:
++    print('unshare is unavailable')
++    rmtree(base)
++    raise SystemExit(0)
++
++launcher = []
++if os.geteuid() == 0:
++    setpriv = shutil.which('setpriv')
++    if setpriv is None:
++        print('setpriv is unavailable for the root-run testsuite')
++        rmtree(base)
++        raise SystemExit(0)
++    launcher = [setpriv, '--reuid=65534', '--regid=65534', '--clear-groups']
++
++unshare_argv = [unshare, '--user', '--map-root-user', '--mount', '--pid',
++                '--fork', '--mount-proc']
++
++probe = subprocess.run(
++    launcher + unshare_argv + ['true'],
++    stdin=subprocess.DEVNULL,
++    stdout=subprocess.DEVNULL,
++    stderr=subprocess.DEVNULL,
++)
++if probe.returncode != 0:
++    rmtree(base)
++    print(f'user namespaces unavailable (rc={probe.returncode})')
++    raise SystemExit(0)
++
++# Verify the namespace exposes the overflow UID using the exact logic from the original test
++check_ns = (
++    "import os\n"
++    "proc_uid = os.lstat('/proc/self').st_uid\n"
++    "if proc_uid in (0, os.geteuid()):\n"
++    "    exit(22)\n"
++)
++probe_uid = subprocess.run(launcher + unshare_argv + [sys.executable, '-c', check_ns])
++if probe_uid.returncode == 22:
++    rmtree(base)
++    print('/proc/self does not expose an overflow uid in this namespace')
++    raise SystemExit(0)
++
++# Pivot workspace for dropped root privileges
++ws_base = Path(tempfile.mkdtemp(prefix='rsync-unshare-'))
++ws_base.chmod(0o777)
++
++try:
++    ws_src = ws_base / 'src'
++    ws_dest = ws_base / 'dest'
++    makepath(ws_src, ws_dest)
++    ws_src.chmod(0o777)
++    ws_dest.chmod(0o777)
++
++    tf = ws_src / 'transfer_me.txt'
++    tf.write_text('sync this\n')
++    tf.chmod(0o777)
++
++    sf = ws_src / 'stdin_test.txt'
++    sf.write_text('stdin data\n')
++    sf.chmod(0o777)
++
++    local_bin = ws_base / 'rsync-bin'
++    shutil.copy2(rsync_argv()[0], local_bin)
++    local_bin.chmod(0o777)
++
++    cmd_prefix = shlex.join([str(local_bin), '-a'])
++    s_path = shlex.quote(str(ws_src) + '/')
++    d_path = shlex.quote(str(ws_dest) + '/')
++
++    # -------------------------------------------------------------------------
++    # TEST 4A: User Namespace Overflow UID with Process Substitution
++    # -------------------------------------------------------------------------
++    # Use process substitution <(...) which resolves to /dev/fd/N
++    inner_script_4a = f'{cmd_prefix} --no-o --no-g --files-from=<(printf "stdin_test.txt\\n") {s_path} {d_path}'
++    unshare_cmd_4a = launcher + unshare_argv + [bash, '-c', inner_script_4a]
++
++    proc_unshare_4a = subprocess.run(
++        unshare_cmd_4a,
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++
++    ctx_unshare_4a = f'rc={proc_unshare_4a.returncode}, stderr={proc_unshare_4a.stderr.strip()!r}'
++
++    if proc_unshare_4a.returncode != 0:
++        test_fail(f'rsync failed reading process substitution pseudo-path inside user namespace ({ctx_unshare_4a})')
++
++    if not (ws_dest / 'stdin_test.txt').is_file():
++        test_fail(f'rsync failed to transfer file specified via process substitution inside user namespace ({ctx_unshare_4a})')
++
++    print('Test 4A Passed: rsync successfully resolved process substitution pseudo-paths inside user namespace', flush=True)
++
++    # -------------------------------------------------------------------------
++    # TEST 4B: Nested Trusted Symlink to /dev/stdin in User Namespace
++    # -------------------------------------------------------------------------
++    # Clear the destination so we have fresh files to transfer
++    rmtree(ws_dest)
++    makepath(ws_dest)
++    ws_dest.chmod(0o777)
++
++    symlink_list_ns = ws_base / 'rsync.list'
++    if symlink_list_ns.is_symlink() or symlink_list_ns.exists():
++        symlink_list_ns.unlink()
++
++    # Create the trusted nested symlink pointing to the kernel pipe
++    symlink_list_ns.symlink_to('/dev/stdin')
++
++    if os.geteuid() == 0:
++        os.lchown(symlink_list_ns, 65534, 65534)
++
++    inner_script_4b = f'printf "stdin_test.txt\\n" | {cmd_prefix} --no-o --no-g --files-from={shlex.quote(str(symlink_list_ns))} {s_path} {d_path}'
++    unshare_cmd_4b = launcher + unshare_argv + [bash, '-c', inner_script_4b]
++
++    proc_unshare_4b = subprocess.run(
++        unshare_cmd_4b,
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++    ctx_unshare_4b = f'rc={proc_unshare_4b.returncode}, stderr={proc_unshare_4b.stderr.strip()!r}'
++    if proc_unshare_4b.returncode != 0:
++        test_fail(f'rsync failed with --files-from=rsync.list -> /dev/stdin inside user namespace ({ctx_unshare_4b})')
++    
++    if not (ws_dest / 'stdin_test.txt').is_file():
++        test_fail(f'rsync failed to transfer the file specified via nested /dev/stdin symlink in namespace ({ctx_unshare_4b})')
++    print('Test 4B Passed: rsync successfully resolved a trusted nested symlink to /dev/stdin in user namespace', flush=True)
++
++finally:
++    rmtree(ws_base)
++
+ rmtree(base)
+ raise SystemExit(0)
+diff --git a/testsuite/skiplist/almalinux-8.txt b/testsuite/skiplist/almalinux-8.txt
+index 71e0d65ba..c814b9563 100644
+--- a/testsuite/skiplist/almalinux-8.txt
++++ b/testsuite/skiplist/almalinux-8.txt
+@@ -6,4 +6,5 @@
+ # AlmaLinux 8 container additions to common.txt and linux.txt.
+ 
+ pseudo-paths  # Bash process substitution is unavailable in the AlmaLinux 8 container
++pseudo-paths-daemon
+ read-batch-pipe
+diff --git a/testsuite/skiplist/cygwin.txt b/testsuite/skiplist/cygwin.txt
+index 4a56c4229..f1a693e75 100644
+--- a/testsuite/skiplist/cygwin.txt
++++ b/testsuite/skiplist/cygwin.txt
+@@ -52,6 +52,7 @@ partial-protected-regular-retry-policy  # deterministic partial EACCES recovery
+ password-file-symlink
+ protected-regular
+ pseudo-paths
++pseudo-paths-daemon
+ read-batch-pipe
+ rename-mixed-parent-transfer
+ rrsync-sender-leaf-flip
+diff --git a/testsuite/skiplist/macos.txt b/testsuite/skiplist/macos.txt
+index 2a868dfab..6a82dbf6a 100644
+--- a/testsuite/skiplist/macos.txt
++++ b/testsuite/skiplist/macos.txt
+@@ -22,6 +22,7 @@ partial-protected-regular-retry-linux
+ preallocate
+ protected-regular
+ pseudo-paths  # dynamically skips on runners lacking bash process substitution
++pseudo-paths-daemon
+ read-batch-pipe
+ readonly-partial-abort-mode-regression  # 
+ rrsync-sender-leaf-flip

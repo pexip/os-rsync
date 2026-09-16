@@ -5,7 +5,7 @@ rrsync - a script to setup restricted rsync users via ssh logins
 ## SYNOPSIS
 
 ```
-rrsync [-ro|-wo] [-munge] [-no-del] [-no-lock] [-no-overwrite]  DIR
+rrsync [-ro|-wo] [-munge] [-absolute] [-no-del] [-no-lock] [-no-overwrite] DIR
 ```
 
 The single non-option argument specifies the restricted _DIR_ to use. It can be
@@ -77,6 +77,12 @@ The remainder of this manpage is dedicated to using the rrsync script.
 
     Enable rsync's [`--munge-links`](rsync.1#opt) on the server side.
 
+0. `-absolute`
+
+    Allow file-transfer arguments to name the restricted directory using its
+    absolute server path. For example, with `rrsync -absolute /path/to/root`,
+    the transfer arg `/path/to/root/dir1` is accepted as an alias for `dir1`.
+
 0.  `-no-del`
 
     Disable rsync's `--delete*` and `--remove*` options.
@@ -89,6 +95,14 @@ The remainder of this manpage is dedicated to using the rrsync script.
 
     Enforce `--ignore-existing` on the server. Prevents overwriting existing
     files when the server is the receiver.
+
+    Because `--ignore-existing` protects only the file being transferred, this
+    also refuses the options that can reach a *different* existing file in the
+    restricted dir: `--log-file`, `--partial-dir`, `--delay-updates`, and
+    backup mode (`-b`, `--backup-dir`, whose published backup replaces whatever
+    already occupies the backup name). Resumable uploads with an explicit
+    `--partial-dir`, `--delay-updates`, and server-side logging are therefore
+    unavailable under this option.
 
 0.  `-help`, `-h`
 

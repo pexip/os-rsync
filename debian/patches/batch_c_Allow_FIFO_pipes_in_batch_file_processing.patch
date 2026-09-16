@@ -1,0 +1,169 @@
+From a93490077daecd686f84959f279d7072ac480939 Mon Sep 17 00:00:00 2001
+From: Omar Elsayed <omarelsayed161@gmail.com>
+Date: Thu, 3 Sep 2026 10:03:54 +0300
+Subject: [PATCH] batch.c: Allow FIFO pipes in batch file processing.
+ Regression fix (#1060)
+
+---
+ batch.c                              |  8 +--
+ testsuite/batch-file-symlink_test.py |  2 +-
+ testsuite/read-batch-pipe_test.py    | 80 ++++++++++++++++++++++++++++
+ testsuite/skiplist/almalinux-8.txt   |  1 +
+ testsuite/skiplist/cygwin.txt        |  1 +
+ testsuite/skiplist/macos.txt         |  1 +
+ 6 files changed, 88 insertions(+), 5 deletions(-)
+ create mode 100644 testsuite/read-batch-pipe_test.py
+
+diff --git a/batch.c b/batch.c
+index a4d19c058..502c6ef6c 100644
+--- a/batch.c
++++ b/batch.c
+@@ -271,12 +271,12 @@ void open_batch_files(void)
+ 		exit_cleanup(RERR_FILEIO);
+ 	}
+ 
+-	/* --read-batch: the file's bytes drive the protocol parser, so refuse
+-	 * non-regular files (FIFO, device, socket) at the batch path. */
++	/* --read-batch: the file's bytes drive the protocol parser,
++	 * allow FIFOs used by shell process substitution while continuing to reject other non-regular inputs. */
+ 	if (!write_batch && batch_fd != STDIN_FILENO) {
+ 		STRUCT_STAT st;
+-		if (do_fstat(batch_fd, &st) == 0 && !S_ISREG(st.st_mode)) {
+-			rprintf(FERROR, "Batch file %s is not a regular file\n",
++		if (do_fstat(batch_fd, &st) == 0 && !S_ISREG(st.st_mode) && !S_ISFIFO(st.st_mode)) {
++			rprintf(FERROR, "Batch file %s is neither a regular file nor a FIFO\n",
+ 				full_fname(batch_name));
+ 			exit_cleanup(RERR_FILEIO);
+ 		}
+diff --git a/testsuite/batch-file-symlink_test.py b/testsuite/batch-file-symlink_test.py
+index f26160dd0..d169152d3 100644
+--- a/testsuite/batch-file-symlink_test.py
++++ b/testsuite/batch-file-symlink_test.py
+@@ -209,7 +209,7 @@ def run_write_batch(batch_plant_path):
+ # node fails first with ENXIO, which is an equally valid refusal at the open.
+ # A clean (returncode 0) run would be the real failure -- rsync accepting the
+ # device as a batch file.
+-refused = ('is not a regular file' in proc.stderr
++refused = ('is neither a regular file nor a FIFO' in proc.stderr
+            or ('open error' in proc.stderr and proc.returncode != 0))
+ if not refused:
+     test_fail(
+diff --git a/testsuite/read-batch-pipe_test.py b/testsuite/read-batch-pipe_test.py
+new file mode 100644
+index 000000000..b40638313
+--- /dev/null
++++ b/testsuite/read-batch-pipe_test.py
+@@ -0,0 +1,80 @@
++#!/usr/bin/env python3
++"""--read-batch process substitution /dev/fd/ pipe must not crash with strict file-type checks."""
++import os
++import shlex
++import shutil
++import subprocess
++import tempfile
++import sys
++from pathlib import Path
++
++from rsyncfns import SCRATCHDIR, makepath, rmtree, rsync_argv, test_fail, test_skipped
++
++# We require bash specifically because standard POSIX /bin/sh does not
++# guarantee support for <(...) process substitution syntax.
++if not sys.platform.startswith('linux'):
++    test_skipped('This test requires Linux platform')
++
++bash = shutil.which('bash')
++if bash is None:
++    test_skipped('bash is unavailable, cannot test process substitution')
++
++# Verify the host bash actually supports process substitution
++probe = subprocess.run(
++    [bash, '-c', 'cat <(echo "probe")'],
++    capture_output=True)
++
++if probe.returncode != 0:
++    test_skipped('bash process substitution is not supported on this system')
++
++base = Path(SCRATCHDIR / 'rsync-batch-fifo')
++src = base / 'src'
++dest = base / 'dest'
++batch_file = base / 'update.batch'
++makepath(src, dest)
++
++# 1. Create dummy data
++(src / 'payload.txt').write_text('batch payload data\n')
++
++# 2. Generate a valid batch file so `cat` actually has a real file to read.
++# Note: This operation also copies the file to `dest` as a side effect.
++subprocess.run([*rsync_argv('-a', f'--write-batch={batch_file}'), f'{src}/', f'{dest}/'], check=True)
++
++# must wipe and recreate the destination directory so the test can 
++# properly prove that --read-batch recreates the files from scratch.
++rmtree(dest)
++makepath(dest)
++
++# 3. Now we can test reading it via bash process substitution
++rsync_base_cmd = shlex.join(rsync_argv('-a'))
++batch_path = shlex.quote(str(batch_file))
++dest_path = shlex.quote(str(dest) + '/')
++
++# Construct the bash command: rsync -a --read-batch=<(cat /path/to/batch) /dest/
++bash_script = f"{rsync_base_cmd} --read-batch=<(cat {batch_path}) {dest_path}"
++
++try:
++    proc_read = subprocess.run(
++        [bash, '-c', bash_script],
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++except subprocess.TimeoutExpired:
++    rmtree(base)
++    test_fail('process substitution batch test timed out')
++
++ctx = f'rc={proc_read.returncode}, stderr={proc_read.stderr.strip()!r}'
++
++# Evaluate result against the strict S_ISREG check bug
++if proc_read.returncode != 0:
++    rmtree(base)
++    test_fail(f'rsync crashed reading batch file from pipe ({ctx})')
++
++if not (dest / 'payload.txt').is_file():
++    rmtree(base)
++    test_fail(f'rsync exited successfully but payload is missing in target ({ctx})')
++
++rmtree(base)
++print('rsync successfully parsed batch stream via process substitution pseudo-path')
++raise SystemExit(0)
+diff --git a/testsuite/skiplist/almalinux-8.txt b/testsuite/skiplist/almalinux-8.txt
+index 483ac8cef..71e0d65ba 100644
+--- a/testsuite/skiplist/almalinux-8.txt
++++ b/testsuite/skiplist/almalinux-8.txt
+@@ -6,3 +6,4 @@
+ # AlmaLinux 8 container additions to common.txt and linux.txt.
+ 
+ pseudo-paths  # Bash process substitution is unavailable in the AlmaLinux 8 container
++read-batch-pipe
+diff --git a/testsuite/skiplist/cygwin.txt b/testsuite/skiplist/cygwin.txt
+index 23456d25e..4a56c4229 100644
+--- a/testsuite/skiplist/cygwin.txt
++++ b/testsuite/skiplist/cygwin.txt
+@@ -52,6 +52,7 @@ partial-protected-regular-retry-policy  # deterministic partial EACCES recovery
+ password-file-symlink
+ protected-regular
+ pseudo-paths
++read-batch-pipe
+ rename-mixed-parent-transfer
+ rrsync-sender-leaf-flip
+ rrsync-sender-parent-pin
+diff --git a/testsuite/skiplist/macos.txt b/testsuite/skiplist/macos.txt
+index 75b292617..2a868dfab 100644
+--- a/testsuite/skiplist/macos.txt
++++ b/testsuite/skiplist/macos.txt
+@@ -22,6 +22,7 @@ partial-protected-regular-retry-linux
+ preallocate
+ protected-regular
+ pseudo-paths  # dynamically skips on runners lacking bash process substitution
++read-batch-pipe
+ readonly-partial-abort-mode-regression  # 
+ rrsync-sender-leaf-flip
+ rrsync-sender-parent-pin

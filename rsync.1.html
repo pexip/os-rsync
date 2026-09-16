@@ -32,7 +32,7 @@ dd p:first-of-type {
 </style>
 </head><body>
 <h2 id="NAME">NAME<a href="#NAME" class="tgt"></a></h2>
-<p>rsync -&#8288; a fast, versatile, remote (and local) file-copying tool</p>
+<p>rsync -&#8288; a fast, versatile, local/remote file-copying tool</p>
 <h2 id="SYNOPSIS">SYNOPSIS<a href="#SYNOPSIS" class="tgt"></a></h2>
 <pre><code>Local:
     rsync [OPTION...] SRC... [DEST]
@@ -49,15 +49,15 @@ Access via rsync daemon:
         rsync [OPTION...] rsync://[USER@]HOST[:PORT]/SRC... [DEST]
     Push:
         rsync [OPTION...] SRC... [USER@]HOST::DEST
-        rsync [OPTION...] SRC... rsync://[USER@]HOST[:PORT]/DEST)
+        rsync [OPTION...] SRC... rsync://[USER@]HOST[:PORT]/DEST
 </code></pre>
-<p>Usages with just one SRC arg and no DEST arg will list the source files instead
+<p>Usages with just one SRC argument and no DEST argument will list the source files instead
 of copying.</p>
-<p>The online version of this manpage (that includes cross-linking of topics)
+<p>The online version of this manpage (which includes cross-linking of topics)
 is available at <a href="https://download.samba.org/pub/rsync/rsync.1">https://download.samba.org/pub/rsync/rsync.1</a>.</p>
 <h2 id="DESCRIPTION">DESCRIPTION<a href="#DESCRIPTION" class="tgt"></a></h2>
 <p>Rsync is a fast and extraordinarily versatile file copying tool.  It can copy
-locally, to/from another host over any remote shell, or to/from a remote rsync
+locally, to/from another host over a remote shell, or to/from a remote rsync
 daemon.  It offers a large number of options that control every aspect of its
 behavior and permit very flexible specification of the set of files to be
 copied.  It is famous for its delta-transfer algorithm, which reduces the
@@ -72,7 +72,7 @@ are made on the destination file directly when the quick check indicates that
 the file's data does not need to be updated.</p>
 <p>Some of the additional features of rsync are:</p>
 <ul>
-<li>support for copying links, devices, owners, groups, and permissions</li>
+<li>support for copying hard and soft links, devices, owners, groups, and permissions</li>
 <li>exclude and exclude-from options similar to GNU tar</li>
 <li>a CVS exclude mode for ignoring the same files that CVS would ignore</li>
 <li>can use any transparent remote shell, including ssh or rsh</li>
@@ -82,35 +82,51 @@ the file's data does not need to be updated.</p>
 </ul>
 <h2 id="GENERAL">GENERAL<a href="#GENERAL" class="tgt"></a></h2>
 <p>Rsync copies files either to or from a remote host, or locally on the current
-host (it does not support copying files between two remote hosts).</p>
+host.  It does not support copying files between two different remote hosts.</p>
 <p>There are two different ways for rsync to contact a remote system: using a
-remote-shell program as the transport (such as ssh or rsh) or contacting an
+remote-shell program as the transport (such as ssh or rsh), or by contacting an
 rsync daemon directly via TCP.  The remote-shell transport is used whenever the
 source or destination path contains a single colon (:) separator after a host
-specification.  Contacting an rsync daemon directly happens when the source or
+specification.  In this case, the local rsync process uses the remote
+shell program to start an rsync process on the remote system.  The two
+rsync processes then communicate via the remote shell program to
+accomplish the desired transfers.  In this case, the files that are
+accessible on the remote system are those accessible to the user ID
+under which the remote shell starts the remote rsync process.</p>
+<p>Contacting an rsync daemon directly happens when the source or
 destination path contains a double colon (::) separator after a host
-specification, OR when an rsync:// URL is specified (see also the <a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING
-RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL CONNECTION</a> section for an
-exception to this latter rule).</p>
-<p>As a special case, if a single source arg is specified without a destination,
+specification, OR when an rsync:// URL is specified.
+In this case, the remote rsync daemon process will
+provide access only to specific sets of files, called modules,
+according to its configuration.
+It is also possible to contact an rsync daemon via a remote-shell
+transport; see the <a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL
+CONNECTION</a> section for details.</p>
+<p>As a special case, if a single source argument is specified without a destination,
 the files are listed in an output format similar to &quot;<code>ls -l</code>&quot;.</p>
-<p>As expected, if neither the source or destination path specify a remote host,
+<p>If neither the source or destination path specify a remote host,
 the copy occurs locally (see also the <a href="#opt--list-only"><code>--list-only</code></a> option).</p>
-<p>Rsync refers to the local side as the client and the remote side as the server.
-Don't confuse server with an rsync daemon.  A daemon is always a server, but a
-server can be either a daemon or a remote-shell spawned process.</p>
+<p>Rsync refers to the local side as the client and the remote side as
+the server.  The server is not to be confused with an rsync daemon.
+A daemon is always a server, but a server can be either a daemon or a
+remote-shell spawned process.  If the transfer is local, then the
+rsync subprocess which receives the contents of the files being
+transferred is the server.</p>
 <h2 id="SETUP">SETUP<a href="#SETUP" class="tgt"></a></h2>
-<p>See the file README.md for installation instructions.</p>
+<p>Most Linux distributions include rsync as a package that can be
+installed using the package manager.
+If for any reason you need to build and install rsync from source,
+see the file README.md for installation instructions.</p>
 <p>Once installed, you can use rsync to any machine that you can access via a
-remote shell (as well as some that you can access using the rsync daemon-mode
-protocol).  For remote transfers, a modern rsync uses ssh for its
-communications, but it may have been configured to use a different remote shell
-by default, such as rsh or remsh.</p>
-<p>You can also specify any remote shell you like, either by using the <a href="#opt-e"><code>-e</code></a>
+remote shell, or that has an rsync daemon available.
+For remote transfers, rsync normally uses ssh for its
+communications.  Alternatively,
+you can specify any remote shell you like, either by using the <a href="#opt-e"><code>-e</code></a>
 command line option, or by setting the <a href="#RSYNC_RSH"><code>RSYNC_RSH</code></a> environment variable.</p>
 <p>Note that rsync must be installed on both the source and destination machines.</p>
 <h2 id="USAGE">USAGE<a href="#USAGE" class="tgt"></a></h2>
-<p>You use rsync in the same way you use rcp.  You must specify a source and a
+<p>You use rsync in a similar way to other file-copying commands such
+as cp and rcp.  You must specify a source and a
 destination, one of which may be remote.</p>
 <p>Perhaps the best way to explain the syntax is with some examples:</p>
 <blockquote>
@@ -122,8 +138,8 @@ directory to the directory src on the machine foo.  If any of the files already
 exist on the remote system then the rsync remote-update protocol is used to
 update the file by sending only the differences in the data.  Note that the
 expansion of wildcards on the command-line (<code>*.c</code>) into a list of files is
-handled by the shell before it runs rsync and not by rsync itself (exactly the
-same as all other Posix-style programs).</p>
+handled by the shell before it runs rsync and not by rsync itself (as for
+other Posix-style programs).</p>
 <blockquote>
 <pre><code>rsync -avz foo:src/bar /data/tmp
 </code></pre>
@@ -175,33 +191,37 @@ directory you like:</p>
 <pre><code>rsync -ai foo/ bar/
 </code></pre>
 </blockquote>
-<p>Rsync also has the ability to customize a destination file's name when copying
-a single item.  The rules for this are:</p>
+<p>Rsync also has the ability to copy a single file to a
+destination file with a different name.  The rules for this are:</p>
 <ul>
 <li>The transfer list must consist of a single item (either a file or an empty
 directory)</li>
 <li>The final element of the destination path must not exist as a directory</li>
 <li>The destination path must not have been specified with a trailing slash</li>
 </ul>
-<p>Under those circumstances, rsync will set the name of the destination's single
-item to the last element of the destination path.  Keep in mind that it is best
-to only use this idiom when copying a file and use the above trailing-slash
+<p>Under those circumstances, rsync will use the specified destination
+path as the filename of the destination (rather than constructing a
+filename using the last element of the source path).  It is best
+to use this idiom only when copying a file, and to use the above trailing-slash
 idiom when copying a directory.</p>
-<p>The following example copies the <code>foo.c</code> file as <code>bar.c</code> in the <code>save</code> dir
+<p>The following example copies the <code>foo.c</code> file as <code>bar.c</code> in the <code>save</code> directory
 (assuming that <code>bar.c</code> isn't a directory):</p>
 <blockquote>
 <pre><code>rsync -ai src/foo.c save/bar.c
 </code></pre>
 </blockquote>
-<p>The single-item copy rule might accidentally bite you if you unknowingly copy a
-single item and specify a destination dir that doesn't exist (without using a
-trailing slash).  For example, if <code>src/*.c</code> matches one file and <code>save/dir</code>
-doesn't exist, this will confuse you by naming the destination file <code>save/dir</code>:</p>
+<p>The single-item copy rule can give unexpected results if a wildcard
+pattern for the source yields a single item, and the destination,
+though specified without a trailing slash, is intended to be a
+directory, but that directory does not exist.
+For example, if <code>src/*.c</code> matches one file and <code>save/dir</code>
+doesn't exist, this will perhaps confusingly name the destination file
+<code>save/dir</code>:</p>
 <blockquote>
 <pre><code>rsync -ai src/*.c save/dir
 </code></pre>
 </blockquote>
-<p>To prevent such an accident, either make sure the destination dir exists or
+<p>To prevent such an accident, either make sure the destination directory exists or
 specify the destination path with a trailing slash:</p>
 <blockquote>
 <pre><code>rsync -ai src/*.c save/dir/
@@ -210,58 +230,110 @@ specify the destination path with a trailing slash:</p>
 <h2 id="SORTED_TRANSFER_ORDER">SORTED TRANSFER ORDER<a href="#SORTED_TRANSFER_ORDER" class="tgt"></a></h2>
 <p>Rsync always sorts the specified filenames into its internal transfer list.
 This handles the merging together of the contents of identically named
-directories, makes it easy to remove duplicate filenames. It can, however,
-confuse someone when the files are transferred in a different order than what
-was given on the command-line.</p>
-<p>If you need a particular file to be transferred prior to another, either
-separate the files into different rsync calls, or consider using
-<a href="#opt--delay-updates"><code>--delay-updates</code></a> (which doesn't affect the sorted transfer order, but
-does make the final file-updating phase happen much more rapidly).</p>
-<h2 id="MULTI-HOST_SECURITY">MULTI-HOST SECURITY<a href="#MULTI-HOST_SECURITY" class="tgt"></a></h2>
-<p>Rsync takes steps to ensure that the file requests that are shared in a
-transfer are protected against various security issues.  Most of the potential
-problems arise on the receiving side where rsync takes steps to ensure that the
-list of files being transferred remains within the bounds of what was
-requested.</p>
-<p>Toward this end, rsync 3.1.2 and later have aborted when a file list contains
-an absolute or relative path that tries to escape out of the top of the
-transfer.  Also, beginning with version 3.2.5, rsync does two more safety
-checks of the file list to (1) ensure that no extra source arguments were added
-into the transfer other than those that the client requested and (2) ensure
-that the file list obeys the exclude rules that were sent to the sender.</p>
-<p>For those that don't yet have a 3.2.5 client rsync (or those that want to be
-extra careful), it is safest to do a copy into a dedicated destination
-directory for the remote files when you don't trust the remote host.  For
-example, instead of doing an rsync copy into your home directory:</p>
+directories and makes it easy to remove duplicate filenames. It can, however,
+result in files being transferred in a different order from that
+specified on the command-line.</p>
+<p>If you need a particular file to be transferred prior to another, the
+only way to be guaranteed of that is to separate the files into
+different rsync calls.  If it is sufficient for the destination files to
+appear at almost the same time, consider using
+<a href="#opt--delay-updates"><code>--delay-updates</code></a>, which doesn't affect the sorted transfer order, but
+does make the final file-updating phase happen much more rapidly.</p>
+<h2 id="SECURITY">SECURITY<a href="#SECURITY" class="tgt"></a></h2>
+<p>Rsync is frequently run across a network and with elevated privileges, so it is
+worth thinking about who you are trusting and with what.  This section is a
+practical guide for safe use; the project's <code>SECURITY.md</code> describes the full
+threat model and the per-platform residuals.</p>
+<h3 id="Use_an_authenticated__encrypted_transport">Use an authenticated, encrypted transport<a href="#Use_an_authenticated__encrypted_transport" class="tgt"></a></h3>
+<p>A plain <code>host:path</code> transfer runs over your remote shell (ssh by default), which
+authenticates the peer and encrypts the connection&nbsp;-&#8288;-&#8288; this is the safe default.
+A direct daemon connection (<code>host::module</code> or <code>rsync://</code>) is <strong>not encrypted</strong>
+and its authentication is comparatively weak, so do not send sensitive data
+across an untrusted network.
+Instead tunnel it over ssh
+(see <a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL CONNECTION</a>) or wrap it in
+TLS with <a href="rsync-ssl.1"><strong>rsync-ssl</strong>(1)</a>, setting <code>RSYNC_SSL_CA_CERT</code> so that the
+server certificate's chain <strong>and</strong> hostname are verified.  When you must supply a
+daemon password non-interactively, put it in a <a href="#opt--password-file"><code>--password-file</code></a> that is
+readable only by you (mode 600) rather than on the command line.</p>
+<h3 id="Copying_from_an_untrusted_sending_host">Copying from an untrusted sending host<a href="#Copying_from_an_untrusted_sending_host" class="tgt"></a></h3>
+<p>When receiving from a remote host, rsync takes steps to ensure that a
+corrupted or compromised remote rsync process can't cause the local
+rsync process to access files beyond the bounds of what was requested.
+Rsync ensures that the list of files being
+transferred stays within the requested tree, and will abort when a
+file list contains an absolute or relative path that tries to escape
+the top of the transfer.  It also verifies that no extra source arguments
+were added to the transfer and that the file list obeys the exclude rules
+that were sent to the sender.</p>
+<p>For those who want to be extra careful,
+it is safest to copy untrusted remote files into a dedicated
+destination directory.  For example, instead of copying into your home
+directory:</p>
 <blockquote>
 <pre><code>rsync -aiv host1:dir1 ~
 </code></pre>
 </blockquote>
-<p>Dedicate a &quot;host1-files&quot; dir to the remote content:</p>
+<p>dedicate a &quot;host1-files&quot; directory to the remote content:</p>
 <blockquote>
 <pre><code>rsync -aiv host1:dir1 ~/host1-files
 </code></pre>
 </blockquote>
 <p>See the <a href="#opt--trust-sender"><code>--trust-sender</code></a> option for additional details.</p>
-<p>CAUTION: it is not particularly safe to use rsync to copy files from a
-case-preserving filesystem to a case-ignoring filesystem.  If you must perform
-such a copy, you should either disable symlinks via <code>--no-links</code> or enable the
-munging of symlinks via <a href="#opt--munge-links"><code>--munge-links</code></a> (and make sure you use the
-right local or remote option).  This will prevent rsync from doing potentially
-dangerous things if a symlink name overlaps with a file or directory. It does
-not, however, ensure that you get a full copy of all the files (since that may
-not be possible when the names overlap). A potentially better solution is to
-list all the source files and create a safe list of filenames that you pass to
-the <a href="#opt--files-from"><code>--files-from</code></a> option.  Any files that conflict in name would need
-to be copied to different destination directories using more than one copy.</p>
-<p>While a copy of a case-ignoring filesystem to a case-ignoring filesystem can
-work out fairly well, if no <code>--delete-during</code> or <code>--delete-before</code> option is
-active, rsync can potentially update an existing file on the receiving side
-without noticing that the upper-/lower-case of the filename should be changed
-to match the sender.</p>
+<h3 id="Copying_between_case-preserving_and_case-insensitive_filesystems">Copying between case-preserving and case-insensitive filesystems<a href="#Copying_between_case-preserving_and_case-insensitive_filesystems" class="tgt"></a></h3>
+<p>Copying from case-preserving to case-insensitive filesystems requires
+caution, because it is possible for the name of a symbolic link to
+overlap with the name of a file or directory once the case
+distinctions are removed, which can cause potentially dangerous
+results such as files being written outside the destination directory
+hierarchy.
+If you must perform
+such a copy, either disable symlinks via <code>--no-links</code> or enable the munging of
+symlinks via <a href="#opt--munge-links"><code>--munge-links</code></a> (and make sure you use the right local or
+remote option).
+This does not, however, ensure
+that you get a full copy of all the files (since that may not be possible when
+the names overlap); a potentially better solution is to build a safe list of
+filenames and pass it to <a href="#opt--files-from"><code>--files-from</code></a>.</p>
+<h3 id="Symbolic_links">Symbolic links<a href="#Symbolic_links" class="tgt"></a></h3>
+<p>A malicious sender can include symlinks that point outside the destination tree
+(for example at <code>/etc/passwd</code>).  Use <a href="#opt--safe-links"><code>--safe-links</code></a> to ignore any symlink
+that points outside the set of files
+being transferred, or <a href="#opt--munge-links"><code>--munge-links</code></a> to store every symlink in a
+form that is unusable on disk but recoverable later; <code>--no-links</code> drops symlinks
+entirely.  See the <a href="#SYMBOLIC_LINKS">SYMBOLIC LINKS</a> section for how these interact.</p>
+<p>Separately, the directory and file paths that <u>you</u> supply on the command line&nbsp;-&#8288;-&#8288;
+<a href="#opt--backup-dir"><code>--backup-dir</code></a>, <a href="#opt--temp-dir"><code>--temp-dir</code></a>, <a href="#opt--partial-dir"><code>--partial-dir</code></a>, the
+<a href="#opt--link-dest"><code>--link-dest</code></a>/<a href="#opt--compare-dest"><code>--compare-dest</code></a>/<a href="#opt--copy-dest"><code>--copy-dest</code></a> basis directories,
+<a href="#opt--log-file"><code>--log-file</code></a>, <a href="#opt--files-from"><code>--files-from</code></a>/<code>--include-from</code>/<code>--exclude-from</code>,
+<a href="#opt--filter"><code>--filter</code></a> merge files, <a href="#opt--write-batch"><code>--write-batch</code></a>/<a href="#opt--read-batch"><code>--read-batch</code></a>,
+and the destination itself&nbsp;-&#8288;-&#8288; are resolved so that a symlink component is followed
+only when it is owned by you or by root; an attacker-planted symlink along one of
+those paths is refused.  <a href="#opt--insecure-links"><code>--insecure-links</code></a> turns that protection off
+(restoring the historical follow-any-symlink behaviour); use it only when every
+directory along those paths is trusted, never on a path an unprivileged user can
+write.</p>
+<h3 id="Use_strong_checksums">Use strong checksums<a href="#Use_strong_checksums" class="tgt"></a></h3>
+<p>Rsync auto-negotiates the strongest checksum that both ends support, so keeping
+both local and remote rsync versions reasonably current is usually all
+that is needed.  You can
+pin the choice with <a href="#opt--checksum-choice"><code>--checksum-choice</code></a> (<code>--cc</code>, e.g. <code>--cc=sha1</code> or one
+of the xxHash variants) or constrain negotiation with the
+<a href="#RSYNC_CHECKSUM_LIST"><code>RSYNC_CHECKSUM_LIST</code></a> environment variable; only very old peers fall back to
+MD4/MD5.  This pre-transfer &quot;does this file need updating?&quot; checksum is separate
+from the whole-file checksum rsync normally computes to verify each transferred
+file afterward (verification is off when <code>--checksum-choice=none</code> is forced).</p>
+<h3 id="Protocol_version">Protocol version<a href="#Protocol_version" class="tgt"></a></h3>
+<p>The client and server automatically negotiate the newest protocol they both
+support, so a current pair is already using the most recent version;
+<a href="#opt--protocol"><code>--protocol</code></a> only <u>forces an older</u> version for compatibility and should
+not be used to downgrade a connection.  Avoiding old protocols is therefore a
+matter of running a current rsync on both ends (a protocol below 30 also forces
+the weak MD4 authentication digest on a daemon connection&nbsp;-&#8288;-&#8288; see the AUTHENTICATION
+STRENGTH section of <a href="rsyncd.conf.5"><strong>rsyncd.conf</strong>(5)</a>).</p>
 <h2 id="ADVANCED_USAGE">ADVANCED USAGE<a href="#ADVANCED_USAGE" class="tgt"></a></h2>
 <p>The syntax for requesting multiple files from a remote host is done by
-specifying additional remote-host args in the same style as the first, or with
+specifying additional remote-host arguments in the same style as the first, or with
 the hostname omitted.  For instance, all these work:</p>
 <blockquote>
 <pre><code>rsync -aiv host:file1 :file2 host:file{3,4} /dest/
@@ -273,12 +345,14 @@ rsync -aiv host::modname/first ::extra-file{1,2} /dest/
 command, so if the start of a follow-up path doesn't begin with the
 modname of the first path, it is assumed to be a path in the module (such as
 the extra-file1 &amp; extra-file2 that are grabbed above).</p>
-<p>Really old versions of rsync (2.6.9 and before) only allowed specifying one
-remote-source arg, so some people have instead relied on the remote-shell
-performing space splitting to break up an arg into multiple paths. Such
-unintuitive behavior is no longer supported by default (though you can request
-it, as described below).</p>
-<p>Starting in 3.2.4, filenames are passed to a remote shell in such a way as to
+<p>Because really old versions of rsync (prior to 3.0.0, released
+March 2008) only allowed specifying one
+remote-source argument, some people have come to rely on the remote shell
+performing space splitting to break a single argument into multiple paths. Such
+unintuitive behavior is no longer supported by default, though you can request
+it, as described in the next paragraph.
+Rsync now (since 3.2.4) passes filenames to a remote
+shell in such a way as to
 preserve the characters you give it. Thus, if you ask for a file with spaces
 in the name, that's what the remote rsync looks for:</p>
 <blockquote>
@@ -286,33 +360,41 @@ in the name, that's what the remote rsync looks for:</p>
 </code></pre>
 </blockquote>
 <p>If you use scripts that have been written to manually apply extra quoting to
-the remote rsync args (or to require remote arg splitting), you can ask rsync
+the remote rsync arguments, or to rely on remote argument splitting, you can ask rsync
 to let your script handle the extra escaping.  This is done by either adding
 the <a href="#opt--old-args"><code>--old-args</code></a> option to the rsync runs in the script (which requires
 a new rsync) or exporting <a href="#RSYNC_OLD_ARGS">RSYNC_OLD_ARGS</a>=1 and <a href="#RSYNC_PROTECT_ARGS">RSYNC_PROTECT_ARGS</a>=0
 (which works with old or new rsync versions).</p>
 <h2 id="CONNECTING_TO_AN_RSYNC_DAEMON">CONNECTING TO AN RSYNC DAEMON<a href="#CONNECTING_TO_AN_RSYNC_DAEMON" class="tgt"></a></h2>
-<p>It is also possible to use rsync without a remote shell as the transport.  In
-this case you will directly connect to a remote rsync daemon, typically using
-TCP port 873. (This obviously requires the daemon to be running on the remote
-system, so refer to the <a href="#STARTING_AN_RSYNC_DAEMON_TO_ACCEPT_CONNECTIONS">STARTING AN RSYNC DAEMON TO ACCEPT CONNECTIONS</a>
-section below for information on that.)</p>
-<p>Using rsync in this way is the same as using it with a remote shell except
-that:</p>
+<p>An rsync daemon provides a way to give access to one or more directory
+hierarchies on a system in a controlled way, without having to provide
+shell access to the system.  Each directory hierarchy is called a
+&quot;module&quot;.  The names, directories, access permissions and so on for
+each module are defined by the rsync daemon configuration file,
+described in <a href="rsyncd.conf.5"><strong>rsyncd.conf</strong>(5)</a>.
+Connections to an rsync daemon typically use TCP port 873.  The
+administrator of the system would normally arrange for the rsync
+daemon to be running;
+refer to the <a href="#STARTING_AN_RSYNC_DAEMON_TO_ACCEPT_CONNECTIONS">STARTING AN RSYNC DAEMON TO ACCEPT CONNECTIONS</a>
+section below for information on how to do that.</p>
+<p>From the client point of view, using rsync to access an rsync daemon
+is similar to using it with a remote shell except that:</p>
 <ul>
 <li>Use either double-colon syntax or rsync:// URL syntax instead of the
 single-colon (remote shell) syntax.</li>
 <li>The first element of the &quot;path&quot; is actually a module name.</li>
-<li>Additional remote source args can use an abbreviated syntax that omits the
+<li>Additional remote source arguments can use an abbreviated syntax that omits the
 hostname and/or the module name, as discussed in <a href="#ADVANCED_USAGE">ADVANCED USAGE</a>.</li>
 <li>The remote daemon may print a &quot;message of the day&quot; when you connect.</li>
 <li>If you specify only the host (with no module or path) then a list of
 accessible modules on the daemon is output.</li>
 <li>If you specify a remote source path but no destination, a listing of the
 matching files on the remote daemon is output.</li>
-<li>The <a href="#opt--rsh"><code>--rsh</code></a> (<code>-e</code>) option must be omitted to avoid changing the
-connection style from using a socket connection to <a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING RSYNC-DAEMON
-FEATURES VIA A REMOTE-SHELL CONNECTION</a>.</li>
+<li>To contact an rsync daemon directly, the <a href="#opt--rsh"><code>--rsh</code></a> (<code>-e</code>)
+option must be omitted.  If it is used, rsync will use the specified
+remote shell program to start an rsync daemon on the remote system.
+See the <a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL
+CONNECTION</a> section for information on this mode of operation.</li>
 </ul>
 <p>An example that copies all the files in a remote module named &quot;src&quot;:</p>
 <blockquote>
@@ -324,7 +406,7 @@ receive a password prompt when you connect.  You can avoid the password prompt
 by setting the environment variable <a href="#RSYNC_PASSWORD"><code>RSYNC_PASSWORD</code></a> to the password you
 want to use or using the <a href="#opt--password-file"><code>--password-file</code></a> option.  This may be useful
 when scripting rsync.</p>
-<p>WARNING: On some systems environment variables are visible to all users.  On
+<p>WARNING: On some systems, environment variables are visible to all users.  On
 those systems using <a href="#opt--password-file"><code>--password-file</code></a> is recommended.</p>
 <p>You may establish the connection via a web proxy by setting the environment
 variable <a href="#RSYNC_PROXY"><code>RSYNC_PROXY</code></a> to a hostname:port pair pointing to your web proxy.
@@ -349,35 +431,46 @@ the default shell of the <strong>system()</strong> call.</p>
 <h2 id="USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL CONNECTION<a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION" class="tgt"></a></h2>
 <p>It is sometimes useful to use various features of an rsync daemon (such as
 named modules) without actually allowing any new socket connections into a
-system (other than what is already required to allow remote-shell access).
+system, other than what is already required to allow remote-shell access.
 Rsync supports connecting to a host using a remote shell and then spawning a
-single-use &quot;daemon&quot; server that expects to read its config file in the home dir
+single-use &quot;daemon&quot; server that expects to read its config file in the home directory
 of the remote user.  This can be useful if you want to encrypt a daemon-style
-transfer's data, but since the daemon is started up fresh by the remote user,
-you may not be able to use features such as chroot or change the uid used by
-the daemon. (For another way to encrypt a daemon transfer, consider using ssh
-to tunnel a local port to a remote machine and configure a normal rsync daemon
-on that remote host to only allow connections from &quot;localhost&quot;.)</p>
+transfer's data.  However, since the daemon is started by the remote user,
+you may not be able to use features which require root privilege, such
+as chroot or setting the user ID used by the daemon.
+(For another way to encrypt a daemon transfer, consider using ssh
+to tunnel a local port to a remote machine, and configure a normal rsync daemon
+on that remote host to allow connections only from &quot;localhost&quot;.)</p>
 <p>From the user's perspective, a daemon transfer via a remote-shell connection
 uses nearly the same command-line syntax as a normal rsync-daemon transfer,
-with the only exception being that you must explicitly set the remote shell
+with the only difference being that you must explicitly set the remote shell
 program on the command-line with the <a href="#opt--rsh"><code>--rsh=COMMAND</code></a> option. (Setting the
 RSYNC_RSH in the environment will not turn on this functionality.) For example:</p>
 <blockquote>
 <pre><code>rsync -av --rsh=ssh host::module /dest
 </code></pre>
 </blockquote>
-<p>If you need to specify a different remote-shell user, keep in mind that the
-user@ prefix in front of the host is specifying the rsync-user value (for a
-module that requires user-based authentication).  This means that you must give
-the '-&#8288;l user' option to ssh when specifying the remote-shell, as in this
-example that uses the short version of the <a href="#opt--rsh"><code>--rsh</code></a> option:</p>
+<p>A &quot;user@&quot; prefix in front of the host serves two purposes at once in this mode:
+it is the rsync-user value (used to log in to a module that requires user-based
+authentication) and, by default, it is also passed to the remote shell as the
+login user.  So the simple form</p>
+<blockquote>
+<pre><code>rsync -av --rsh=ssh user@host::module /dest
+</code></pre>
+</blockquote>
+<p>runs <code>ssh -l user host</code> and offers &quot;user&quot; as the rsync-user to the module; the
+two are forced to be the same name.</p>
+<p>If you need the remote-shell (ssh) login to use a different name than the
+rsync-user, give an explicit '-&#8288;l' option to ssh in the remote-shell command.
+When ssh is already told which user to log in as, rsync does not add its own
+'-&#8288;l', so the &quot;user@&quot; prefix is then used only as the rsync-user.  For example,
+using the short version of the <a href="#opt--rsh"><code>--rsh</code></a> option:</p>
 <blockquote>
 <pre><code>rsync -av -e &quot;ssh -l ssh-user&quot; rsync-user@host::module /dest
 </code></pre>
 </blockquote>
-<p>The &quot;ssh-user&quot; will be used at the ssh level; the &quot;rsync-user&quot; will be used to
-log-in to the &quot;module&quot;.</p>
+<p>Here &quot;ssh-user&quot; is used at the ssh level while &quot;rsync-user&quot; is used to log in to
+the &quot;module&quot;.</p>
 <p>In this setup, the daemon is started by the ssh command that is accessing the
 system (which can be forced via the <code>~/.ssh/authorized_keys</code> file, if desired).
 However, when accessing a daemon directly, it needs to be started beforehand.</p>
@@ -386,9 +479,9 @@ However, when accessing a daemon directly, it needs to be started beforehand.</p
 daemon already running (or it needs to have configured something like inetd to
 spawn an rsync daemon for incoming connections on a particular port).  For full
 information on how to start a daemon that will handling incoming socket
-connections, see the <a href="rsyncd.conf.5"><strong>rsyncd.conf</strong>(5)</a> manpage&nbsp;-&#8288;-&#8288; that is
-the config file for the daemon, and it contains the full details for how to run
-the daemon (including stand-alone and inetd configurations).</p>
+connections, see the manpage for <a href="rsyncd.conf.5"><strong>rsyncd.conf</strong>(5)</a>,
+the config file for the daemon.  The manpage contains the full details for how to run
+the daemon, including stand-alone and inetd configurations.</p>
 <p>If you're using one of the remote-shell transports for the transfer, there is
 no need to manually start an rsync daemon.</p>
 <h2 id="EXAMPLES">EXAMPLES<a href="#EXAMPLES" class="tgt"></a></h2>
@@ -417,8 +510,11 @@ has its own detailed description later in this manpage.</p>
 --archive, -a            archive mode is -rlptgoD (no -A,-X,-U,-N,-H)
 --no-OPTION              turn off an implied OPTION (e.g. --no-D)
 --recursive, -r          recurse into directories
+--inc-recursive, --i-r   enable incremental recursion
+--no-inc-recursive       disable incremental recursion
+--no-i-r                 same as --no-inc-recursive
 --relative, -R           use relative path names
---no-implied-dirs        don't send implied dirs with --relative
+--no-implied-dirs        don't send implied directories with --relative
 --backup, -b             make backups (see --suffix &amp; --backup-dir)
 --backup-dir=DIR         make backups into hierarchy based in DIR
 --suffix=SUFFIX          backup suffix (default ~ w/o --backup-dir)
@@ -427,15 +523,18 @@ has its own detailed description later in this manpage.</p>
 --append                 append data onto shorter files
 --append-verify          --append w/old data in file checksum
 --dirs, -d               transfer directories without recursing
---old-dirs, --old-d      works like --dirs when talking to old rsync
+--old-dirs               works like --dirs when talking to old rsync
+--old-d                  same as --old-dirs
 --mkpath                 create destination's missing path components
 --links, -l              copy symlinks as symlinks
---copy-links, -L         transform symlink into referent file/dir
+--copy-links, -L         transform symlink into referent file/directory
 --copy-unsafe-links      only &quot;unsafe&quot; symlinks are transformed
 --safe-links             ignore symlinks that point outside the tree
+--insecure-links         follow attacker-owned symlinks in operator paths
+--confine-root=DIR       refuse operator paths resolving outside DIR
 --munge-links            munge symlinks to make them safe &amp; unusable
---copy-dirlinks, -k      transform symlink to dir into referent dir
---keep-dirlinks, -K      treat symlinked dir on receiver as dir
+--copy-dirlinks, -k      transform symlink to directory into referent directory
+--keep-dirlinks, -K      treat symlinked directory on receiver as directory
 --hard-links, -H         preserve hard links
 --perms, -p              preserve permissions
 --executability, -E      preserve executability
@@ -448,6 +547,7 @@ has its own detailed description later in this manpage.</p>
 --copy-devices           copy device contents as a regular file
 --write-devices          write to devices as files (implies --inplace)
 --specials               preserve special files
+--drop-D                 receiver refuses to create devices/specials
 -D                       same as --devices --specials
 --times, -t              preserve modification times
 --atimes, -U             preserve access (use) times
@@ -461,25 +561,27 @@ has its own detailed description later in this manpage.</p>
 --preallocate            allocate dest files before writing them
 --dry-run, -n            perform a trial run with no changes made
 --whole-file, -W         copy files whole (w/o delta-xfer algorithm)
+--no-whole-file, --no-W  use the delta-xfer algorithm
 --checksum-choice=STR    choose the checksum algorithm (aka --cc)
 --one-file-system, -x    don't cross filesystem boundaries
 --block-size=SIZE, -B    force a fixed checksum block-size
 --rsh=COMMAND, -e        specify the remote shell to use
 --rsync-path=PROGRAM     specify the rsync to run on remote machine
 --existing               skip creating new files on receiver
+--ignore-non-existing    skip creating new files on receiver
 --ignore-existing        skip updating files that exist on receiver
---remove-source-files    sender removes synchronized files (non-dir)
+--remove-source-files    sender removes synchronized files (non-directory)
 --del                    an alias for --delete-during
---delete                 delete extraneous files from dest dirs
+--delete                 delete extraneous files from dest directories
 --delete-before          receiver deletes before xfer, not during
 --delete-during          receiver deletes during the transfer
 --delete-delay           find deletions during, delete after
 --delete-after           receiver deletes after transfer, not during
---delete-excluded        also delete excluded files from dest dirs
---ignore-missing-args    ignore missing source args without error
---delete-missing-args    delete missing source args from destination
+--delete-excluded        also delete excluded files from dest directories
+--ignore-missing-args    ignore missing source arguments without error
+--delete-missing-args    delete missing source arguments from destination
 --ignore-errors          delete even if there are I/O errors
---force                  force deletion of dirs even if not empty
+--force                  force deletion of directories even if not empty
 --max-delete=NUM         don't delete more than NUM files
 --max-size=SIZE          don't transfer any file larger than SIZE
 --min-size=SIZE          don't transfer any file smaller than SIZE
@@ -505,6 +607,7 @@ has its own detailed description later in this manpage.</p>
 --compress, -z           compress file data during the transfer
 --compress-choice=STR    choose the compression algorithm (aka --zc)
 --compress-level=NUM     explicitly set compression level (aka --zl)
+--compress-threads=NUM   explicitly set compression threads (aka --zt)
 --skip-compress=LIST     skip compressing files with suffix in LIST
 --cvs-exclude, -C        auto-ignore files in the same way CVS does
 --filter=RULE, -f        add a file-filtering RULE
@@ -516,8 +619,8 @@ has its own detailed description later in this manpage.</p>
 --include-from=FILE      read include patterns from FILE
 --files-from=FILE        read list of source-file names from FILE
 --from0, -0              all *-from/filter files are delimited by 0s
---old-args               disable the modern arg-protection idiom
---secluded-args, -s      use the protocol to safely send the args
+--old-args               disable the modern argument-protection idiom
+--secluded-args, -s      use the protocol to safely send the arguments
 --trust-sender           trust the remote sender's file list
 --copy-as=USER[:GROUP]   specify user &amp; optional group for the copy
 --address=ADDRESS        bind address for outgoing socket to daemon
@@ -583,19 +686,19 @@ option has a short variant).</p>
 <p>The parameter may need to be quoted in some manner for it to survive the
 shell's command-line parsing.  Also keep in mind that a leading tilde (<code>~</code>) in
 a pathname is substituted by your shell, so make sure that you separate the
-option name from the pathname using a space if you want the local shell to
-expand it.</p>
+option name from the pathname using a space (rather than an equal
+sign) if you want the local shell to expand it.</p>
 <dl>
 
 <dt id="opt--help"><code>--help</code><a href="#opt--help" class="tgt"></a></dt><dd>
 <p>Print a short help page describing the options available in rsync and exit.
 You can also use <code>-h</code> for <code>--help</code> when it is used without any other
-options (since it normally means <a href="#opt--human-readable"><code>--human-readable</code></a>).</p>
+options or arguments (since otherwise it means <a href="#opt--human-readable"><code>--human-readable</code></a>).</p>
 </dd>
 
 <span id="opt-V"></span><dt id="opt--version"><code>--version</code>, <code>-V</code><a href="#opt--version" class="tgt"></a></dt><dd>
 <p>Print the rsync version plus other info and exit.  When repeated, the
-information is output is a JSON format that is still fairly readable
+information is output in a JSON format that is still fairly readable
 (client side only).</p>
 <p>The output includes a list of compiled-in capabilities, a list of
 optimizations, the default list of checksum algorithms, the default list of
@@ -621,14 +724,15 @@ sent and received bytes (which is really just a feel-good bigger-is-better
 number).  Note that these byte values can be made more (or less)
 human-readable by using the <a href="#opt--human-readable"><code>--human-readable</code></a> (or
 <code>--no-human-readable</code>) options.</p>
-<p>In a modern rsync, the <code>-v</code> option is equivalent to the setting of groups
+<p>The <code>-v</code> option is equivalent to the setting of groups
 of <a href="#opt--info"><code>--info</code></a> and <a href="#opt--debug"><code>--debug</code></a> options.  You can choose to use
 these newer options in addition to, or in place of using <code>--verbose</code>, as
 any fine-grained settings override the implied settings of <code>-v</code>.  Both
-<a href="#opt--info"><code>--info</code></a> and <a href="#opt--debug"><code>--debug</code></a> have a way to ask for help that
-tells you exactly what flags are set for each increase in verbosity.</p>
+<a href="#opt--info"><code>--info</code></a> and <a href="#opt--debug"><code>--debug</code></a> have help texts available that
+tells you exactly what flags are set for each increase in verbosity
+(use <code>--info=help</code> or <code>--debug=help</code> to see them).</p>
 <p>However, do keep in mind that a daemon's &quot;<code>max verbosity</code>&quot; setting will limit
-how high of a level the various individual flags can be set on the daemon
+how high the various individual flags can be set on the daemon
 side.  For instance, if the max is 2, then any info and/or debug flag that
 is set to a higher value than what would be set by <code>-vv</code> will be downgraded
 to the <code>-vv</code> level in the daemon's logging.</p>
@@ -650,9 +754,9 @@ rsync -avv --info=stats2,misc1,flist0 src/ dest/
 <p>Note that <code>--info=name</code>'s output is affected by the <a href="#opt--out-format"><code>--out-format</code></a>
 and <a href="#opt--itemize-changes"><code>--itemize-changes</code></a> (<code>-i</code>) options.  See those options for more
 information on what is output and when.</p>
-<p>This option was added to 3.1.0, so an older rsync on the server side might
-reject your attempts at fine-grained control (if one or more flags needed
-to be send to the server and the server was too old to understand them).
+<p>This option was added to 3.1.0 (released September 2013),
+so an older rsync on the server side might
+reject your attempts at fine-grained control.
 See also the &quot;<code>max verbosity</code>&quot; caveat above when dealing with a daemon.</p>
 </dd>
 
@@ -671,9 +775,9 @@ rsync -avA --del --debug=del2,acl src/ dest/
 </blockquote>
 <p>Note that some debug messages will only be output when the <a href="#opt--stderr"><code>--stderr=all</code></a>
 option is specified, especially those pertaining to I/O and buffer debugging.</p>
-<p>Beginning in 3.2.0, this option is no longer auto-forwarded to the server
-side in order to allow you to specify different debug values for each side
-of the transfer, as well as to specify a new debug option that is only
+<p>This option is not forwarded by the client to the server side, so that
+you can specify different debug values for each side of the transfer.
+This also allows you to specify debug options that are only
 present in one of the rsync versions.  If you want to duplicate the same
 option on both sides, using brace expansion is an easy way to save you some
 typing.  This works in zsh and bash:</p>
@@ -684,22 +788,23 @@ typing.  This works in zsh and bash:</p>
 </dd>
 
 <dt id="opt--stderr"><code>--stderr=errors|all|client</code><a href="#opt--stderr" class="tgt"></a></dt><dd>
-<p>This option controls which processes output to stderr and if info messages
-are also changed to stderr.  The mode strings can be abbreviated, so feel
-free to use a single letter value.  The 3 possible choices are:</p>
+<p>This option controls which processes output to stderr, and whether
+info messages are output to stderr rather than stdout.
+The mode strings can be abbreviated down as far as a single letter.
+The 3 possible choices are:</p>
 <ul>
 <li>
-<p><code>errors</code> -&#8288; (the default) causes all the rsync processes to send an
-error directly to stderr, even if the process is on the remote side of
+<p><code>errors</code> -&#8288; (the default) causes all the rsync processes to send
+errors directly to stderr, even if the process is on the remote side of
 the transfer.  Info messages are sent to the client side via the protocol
 stream.  If stderr is not available (i.e. when directly connecting with a
 daemon via a socket) errors fall back to being sent via the protocol
 stream.</p>
 </li>
 <li>
-<p><code>all</code> -&#8288; causes all rsync messages (info and error) to get written
+<p><code>all</code> -&#8288; causes all rsync messages (info and error) to be written
 directly to stderr from all (possible) processes.  This causes stderr to
-become line-buffered (instead of raw) and eliminates the ability to
+become line-buffered (instead of unbuffered) and eliminates the ability to
 divide up the info and error messages by file handle.  For those doing
 debugging or using several levels of verbosity, this option can help to
 avoid clogging up the transfer stream (which should prevent any chance of
@@ -716,11 +821,10 @@ older rsync, you may want to use <code>--stderr=all</code> since that idiom has
 been around for several releases.</p>
 </li>
 </ul>
-<p>This option was added in rsync 3.2.3.  This version also began the
-forwarding of a non-default setting to the remote side, though rsync uses
-the backward-compatible options <code>--msgs2stderr</code> and <code>--no-msgs2stderr</code> to
-represent the <code>all</code> and <code>client</code> settings, respectively.  A newer rsync
-will continue to accept these older option names to maintain compatibility.</p>
+<p>Rsync also accepts the old <code>--msgs2stderr</code> and <code>--no-msgs2stderr</code>
+options, equivalent to the <code>all</code> and <code>client</code> settings,
+respectively, and uses them when forwarding non-default settings
+to the remote side, in case the remote rsync is an older version.</p>
 </dd>
 
 <span id="opt-q"></span><dt id="opt--quiet"><code>--quiet</code>, <code>-q</code><a href="#opt--quiet" class="tgt"></a></dt><dd>
@@ -760,7 +864,8 @@ exactly.</p>
 <p>When comparing two timestamps, rsync treats the timestamps as being equal
 if they differ by no more than the modify-window value.  The default is 0,
 which matches just integer seconds.  If you specify a negative value (and
-the receiver is at least version 3.1.3) then nanoseconds will also be taken
+the receiver is at least version 3.1.3, released January 2018)
+then nanoseconds will also be taken
 into account.  Specifying 1 is useful for copies to/from MS Windows FAT
 filesystems, because FAT represents times with a 2-second resolution
 (allowing times to differ from the original by up to 1 second).</p>
@@ -781,7 +886,7 @@ between ext3 and ext4, or if the receiving rsync is older than 3.1.3.</p>
 need of a transfer.  Without this option, rsync uses a &quot;quick check&quot; that
 (by default) checks if each file's size and time of last modification match
 between the sender and receiver.  This option changes this to compare a
-128-bit checksum for each file that has a matching size.  Generating the
+checksum for each file that has a matching size.  Generating the
 checksums means that both sides will expend a lot of disk I/O reading all
 the data in the files in the transfer, so this can slow things down
 significantly (and this is prior to any reading that will be done to
@@ -791,7 +896,7 @@ scan that builds the list of the available files.  The receiver generates
 its checksums when it is scanning for changed files, and will checksum any
 file that has the same size as the corresponding sender's file: files with
 either a changed size or a changed checksum are selected for transfer.</p>
-<p>Note that rsync always verifies that each <u>transferred</u> file was correctly
+<p>Note that rsync normally verifies that each <u>transferred</u> file was correctly
 reconstructed on the receiving side by checking a whole-file checksum that
 is generated as the file is transferred, but that automatic
 after-the-transfer verification has nothing to do with this option's
@@ -839,9 +944,10 @@ incremental recursion for creating the list of files to transfer.</p>
 </dd>
 
 <span id="opt--i-r"></span><dt id="opt--inc-recursive"><code>--inc-recursive</code>, <code>--i-r</code><a href="#opt--inc-recursive" class="tgt"></a></dt><dd>
-<p>This option explicitly enables on incremental recursion when scanning for
+<p>This option explicitly enables incremental recursion when scanning for
 files, which is enabled by default when using the <a href="#opt--recursive"><code>--recursive</code></a>
-option and both sides of the transfer are running rsync 3.0.0 or newer.</p>
+option and both sides of the transfer are running rsync 3.0.0
+(released March 2008) or newer.</p>
 <p>Incremental recursion uses much less memory than non-incremental, while
 also beginning the transfer more quickly (since it doesn't need to scan the
 entire transfer hierarchy before it starts transferring files).  If no
@@ -854,12 +960,11 @@ disable the incremental recursion mode.  These include:</p>
 <li><a href="#opt--prune-empty-dirs"><code>--prune-empty-dirs</code></a></li>
 <li><a href="#opt--delay-updates"><code>--delay-updates</code></a></li>
 </ul>
-<p>In order to make <a href="#opt--delete"><code>--delete</code></a> compatible with incremental recursion,
-rsync 3.0.0 made <a href="#opt--delete-during"><code>--delete-during</code></a> the default delete mode (which
-was first added in 2.6.4).</p>
+<p>In order to be compatible with incremental recursion,
+<a href="#opt--delete-during"><code>--delete-during</code></a> is the default delete mode for <a href="#opt--delete"><code>--delete</code></a>.</p>
 <p>One side-effect of incremental recursion is that any missing
 sub-directories inside a recursively-scanned directory are (by default)
-created prior to recursing into the sub-dirs.  This earlier creation point
+created prior to recursing into the sub-directories.  This earlier creation point
 (compared to a non-incremental recursion) allows rsync to then set the
 modify time of the finished directory right away (without having to delay
 that until a bunch of recursive copying has finished).  However, these
@@ -872,7 +977,7 @@ actually begins.  This early-creation idiom can be avoided by using the
 </dd>
 
 <span id="opt--no-i-r"></span><dt id="opt--no-inc-recursive"><code>--no-inc-recursive</code>, <code>--no-i-r</code><a href="#opt--no-inc-recursive" class="tgt"></a></dt><dd>
-<p>Disables the new incremental recursion algorithm of the
+<p>Disables the incremental recursion algorithm of the
 <a href="#opt--recursive"><code>--recursive</code></a> option.  This makes rsync scan the full file list
 before it begins to transfer files.  See <a href="#opt--inc-recursive"><code>--inc-recursive</code></a> for more
 info.</p>
@@ -882,8 +987,7 @@ info.</p>
 <p>Use relative paths.  This means that the full path names specified on the
 command line are sent to the server rather than just the last parts of the
 filenames.  This is particularly useful when you want to send several
-different directories at the same time.  For example, if you used this
-command:</p>
+different directories at the same time.  For example, this command:</p>
 <blockquote>
 <pre><code>rsync -av /foo/bar/baz.c remote:/tmp/
 </code></pre>
@@ -898,31 +1002,32 @@ you used</p>
 machine, preserving its full path.  These extra path elements are called
 &quot;implied directories&quot; (i.e. the &quot;foo&quot; and the &quot;foo/bar&quot; directories in the
 above example).</p>
-<p>Beginning with rsync 3.0.0, rsync always sends these implied directories as
+<p>Rsync always sends these implied directories as
 real directories in the file list, even if a path element is really a
 symlink on the sending side.  This prevents some really unexpected behaviors
-when copying the full path of a file that you didn't realize had a symlink
+when copying the full path of a file that has a symlink
 in its path.  If you want to duplicate a server-side symlink, include both
-the symlink via its path, and referent directory via its real path.  If
+the symlink via its path, and the referent directory via its real path.  If
 you're dealing with an older rsync on the sending side, you may need to use
 the <a href="#opt--no-implied-dirs"><code>--no-implied-dirs</code></a> option.</p>
 <p>It is also possible to limit the amount of path information that is sent as
 implied directories for each path you specify.  With a modern rsync on the
-sending side (beginning with 2.6.7), you can insert a dot and a slash into
+sending side (beginning with 2.6.7, released March 2006),
+you can insert a dot and a slash into
 the source path, like this:</p>
 <blockquote>
 <pre><code>rsync -avR /foo/./bar/baz.c remote:/tmp/
 </code></pre>
 </blockquote>
-<p>That would create /tmp/bar/baz.c on the remote machine. (Note that the dot
+<p>That would create /tmp/bar/baz.c on the receiving machine. (Note that the dot
 must be followed by a slash, so &quot;/foo/.&quot; would not be abbreviated.) For
-older rsync versions, you would need to use a chdir to limit the source
+older rsync versions, you would need to change directory to limit the source
 path.  For example, when pushing files:</p>
 <blockquote>
 <pre><code>(cd /foo; rsync -avR bar/baz.c remote:/tmp/)
 </code></pre>
 </blockquote>
-<p>(Note that the parens put the two commands into a sub-shell, so that the
+<p>(Note that the parentheses put the two commands into a sub-shell, so that the
 &quot;cd&quot; command doesn't remain in effect for future commands.) If you're
 pulling files from an older rsync, use this idiom (but only for a
 non-daemon transfer):</p>
@@ -941,24 +1046,32 @@ path elements on the destination system are left unchanged if they exist,
 and any missing implied directories are created with default attributes.
 This even allows these implied path elements to have big differences, such
 as being a symlink to a directory on the receiving side.</p>
-<p>For instance, if a command-line arg or a files-from entry told rsync to
+<p>For instance, if a command-line argument or a files-from entry told rsync to
 transfer the file &quot;path/foo/file&quot;, the directories &quot;path&quot; and &quot;path/foo&quot;
 are implied when <a href="#opt--relative"><code>--relative</code></a> is used.  If &quot;path/foo&quot; is a symlink to &quot;bar&quot;
 on the destination system, the receiving rsync would ordinarily delete
 &quot;path/foo&quot;, recreate it as a directory, and receive the file into the new
-directory.  With <code>--no-implied-dirs</code>, the receiving rsync updates
-&quot;path/foo/file&quot; using the existing path elements, which means that the file
-ends up being created in &quot;path/bar&quot;.  Another way to accomplish this link
-preservation is to use the <a href="#opt--keep-dirlinks"><code>--keep-dirlinks</code></a> option (which will also affect
-symlinks to directories in the rest of the transfer).</p>
-<p>When pulling files from an rsync older than 3.0.0, you may need to use this
+directory.  With <code>--no-implied-dirs</code>, the receiving rsync leaves the
+existing &quot;path/foo&quot; symlink in place and follows it, so the file is written
+through the symlink and ends up in &quot;path/bar&quot;.  Note the security
+implication: a pre-existing in-tree symlink-to-directory on the receiving
+side will redirect where the file is written, so only use
+<code>--no-implied-dirs</code> when you trust the destination's existing path elements.
+(A symlink whose target is absolute or escapes the destination tree is still
+refused by the secure path resolver rather than followed.)  Another way to
+accomplish this link preservation is to use the <a href="#opt--keep-dirlinks"><code>--keep-dirlinks</code></a>
+option (which will also affect symlinks to directories in the rest of the
+transfer).</p>
+<p>When pulling files from an rsync older than 3.0.0 (March 2008),
+you may need to use this
 option if the sending side has a symlink in the path you request and you
 wish the implied directories to be transferred as normal directories.</p>
 </dd>
 
 <span id="opt-b"></span><dt id="opt--backup"><code>--backup</code>, <code>-b</code><a href="#opt--backup" class="tgt"></a></dt><dd>
 <p>With this option, preexisting destination files are renamed as each file is
-transferred or deleted.  You can control where the backup file goes and
+transferred or deleted (that is, each file to be deleted or overwritten
+gets renamed instead).  You can control where the backup file goes and
 what (if any) suffix gets appended using the <a href="#opt--backup-dir"><code>--backup-dir</code></a> and
 <a href="#opt--suffix"><code>--suffix</code></a> options.</p>
 <p>If you don't specify <a href="#opt--backup-dir"><code>--backup-dir</code></a>:</p>
@@ -986,8 +1099,9 @@ specified directory will keep their original filenames).</p>
 <p>Note that if you specify a relative path, the backup directory will be
 relative to the destination directory, so you probably want to specify
 either an absolute path or a path that starts with &quot;../&quot;.  If an rsync
-daemon is the receiver, the backup dir cannot go outside the module's path
-hierarchy, so take extra care not to delete it or copy into it.</p>
+daemon is the receiver, the backup directory cannot go outside the module's
+path hierarchy, so take extra care not to delete or copy into the
+backup directory inadvertently.</p>
 </dd>
 
 <dt id="opt--suffix"><code>--suffix=SUFFIX</code><a href="#opt--suffix" class="tgt"></a></dt><dd>
@@ -1001,10 +1115,10 @@ hierarchy, so take extra care not to delete it or copy into it.</p>
 a modified time that is newer than the source file. (If an existing
 destination file has a modification time equal to the source file's, it
 will be updated if the sizes are different.)</p>
-<p>Note that this does not affect the copying of dirs, symlinks, or other
-special files.  Also, a difference of file format between the sender and
+<p>Note that this does not affect the copying of directories, symlinks, or other
+special files.  Also, a difference of object type between the sender and
 receiver is always considered to be important enough for an update, no
-matter what date is on the objects.  In other words, if the source has a
+matter what date is on the objects.  For example, if the source has a
 directory where the destination has a file, the transfer would occur
 regardless of the timestamps.</p>
 <p>This option is a <a href="#TRANSFER_RULES">TRANSFER RULE</a>, so don't expect any
@@ -1052,13 +1166,12 @@ bound.  It can also help keep a copy-on-write filesystem snapshot from
 diverging the entire contents of a file that only has minor changes.</p>
 <p>The option implies <a href="#opt--partial"><code>--partial</code></a> (since an interrupted transfer does
 not delete the file), but conflicts with <a href="#opt--partial-dir"><code>--partial-dir</code></a> and
-<a href="#opt--delay-updates"><code>--delay-updates</code></a>.  Prior to rsync 2.6.4 <code>--inplace</code> was also
-incompatible with <a href="#opt--compare-dest"><code>--compare-dest</code></a> and <a href="#opt--link-dest"><code>--link-dest</code></a>.</p>
+<a href="#opt--delay-updates"><code>--delay-updates</code></a>.</p>
 </dd>
 
 <dt id="opt--append"><code>--append</code><a href="#opt--append" class="tgt"></a></dt><dd>
-<p>This special copy mode only works to efficiently update files that are
-known to be growing larger where any existing content on the receiving side
+<p>This special copy mode is only applicable to update files that are
+known to be growing larger, that is, where any existing content on the receiving side
 is also known to be the same as the content on the sender.  The use of
 <code>--append</code> <strong>can be dangerous</strong> if you aren't 100% sure that all the files
 in the transfer are shared, growing files.  You should thus use filter
@@ -1066,8 +1179,8 @@ rules to ensure that you weed out any files that do not fit this criteria.</p>
 <p>Rsync updates these growing file in-place without verifying any of the
 existing content in the file (it only verifies the content that it is
 appending).  Rsync skips any files that exist on the receiving side that
-are not shorter than the associated file on the sending side (which means
-that new files are transferred).  It also skips any files whose size on the
+are not shorter than the associated file on the sending side.
+It also skips any files whose size on the
 sending side gets shorter during the send negotiations (rsync warns about a
 &quot;diminished&quot; file when this happens).</p>
 <p>This does not interfere with the updating of a file's non-content
@@ -1078,11 +1191,11 @@ non-regular files.</p>
 
 <dt id="opt--append-verify"><code>--append-verify</code><a href="#opt--append-verify" class="tgt"></a></dt><dd>
 <p>This special copy mode works like <a href="#opt--append"><code>--append</code></a> except that all the
-data in the file is included in the checksum verification (making it less
-efficient but also potentially safer).  This option <strong>can be dangerous</strong> if
+data in the file is included in the checksum verification, making it less
+efficient but also potentially safer.  This option <strong>can be dangerous</strong> if
 you aren't 100% sure that all the files in the transfer are shared, growing
 files.  See the <a href="#opt--append"><code>--append</code></a> option for more details.</p>
-<p>Note: prior to rsync 3.0.0, the <a href="#opt--append"><code>--append</code></a> option worked like
+<p>Note: prior to rsync 3.0.0 (March 2008), the <a href="#opt--append"><code>--append</code></a> option worked like
 <code>--append-verify</code>, so if you are interacting with an older rsync (or the
 transfer is using a protocol prior to 30), specifying either append option
 will initiate an <code>--append-verify</code> transfer.</p>
@@ -1101,16 +1214,21 @@ the directory name specified is &quot;.&quot; or ends with a trailing slash (e.g
 usage) if <a href="#opt--recursive"><code>--recursive</code></a> wasn't specified (so that directories are
 seen in the listing).  Specify <code>--no-dirs</code> (or <code>--no-d</code>) if you want to
 turn this off.</p>
-<p>There is also a backward-compatibility helper option, <code>--old-dirs</code>
-(<code>--old-d</code>) that tells rsync to use a hack of <code>-r --exclude='/*/*'</code> to get
-an older rsync to list a single directory without recursing.</p>
+<p>See also the backward-compatibility helper option <a href="#opt--old-dirs"><code>--old-dirs</code></a>.</p>
+</dd>
+
+<span id="opt--old-d"></span><dt id="opt--old-dirs"><code>--old-dirs</code>, <code>--old-d</code><a href="#opt--old-dirs" class="tgt"></a></dt><dd>
+<p>This backward-compatibility helper tells rsync to use a hack of
+<code>-r --exclude='/*/*'</code> to get an older remote rsync to list a single directory
+without recursing.</p>
 </dd>
 
 <dt id="opt--mkpath"><code>--mkpath</code><a href="#opt--mkpath" class="tgt"></a></dt><dd>
 <p>Create all missing path components of the destination path.</p>
-<p>By default, rsync allows only the final component of the destination path
-to not exist, which is an attempt to help you to validate your destination
-path.  With this option, rsync creates all the missing destination-path
+<p>By default, rsync will create only the final component of the destination path
+if it does not exist.  If any other component does not exist that is an
+error, as this can help to catch mistakes in the destination path specification.
+With this option, rsync creates all the missing destination-path
 components, just as if <code>mkdir -p $DEST_PATH</code> had been run on the receiving
 side.</p>
 <p>When specifying a destination path, including a trailing slash ensures that
@@ -1118,11 +1236,11 @@ the whole path is treated as directory names to be created, even when the
 file list has a single item. See the <a href="#COPYING_TO_A_DIFFERENT_NAME">COPYING TO A DIFFERENT NAME</a>
 section for full details on how rsync decides if a final destination-path
 component should be created as a directory or not.</p>
-<p>If you would like the newly-created destination dirs to match the dirs on
+<p>If you would like the newly-created destination directories to match the directories on
 the sending side, you should be using <a href="#opt--relative"><code>--relative</code></a> (<code>-R</code>) instead
 of <code>--mkpath</code>.  For instance, the following two commands result in the same
 destination tree, but only the second command ensures that the
-&quot;some/extra/path&quot; components match the dirs on the sending side:</p>
+&quot;some/extra/path&quot; components match the directories on the sending side:</p>
 <blockquote>
 <pre><code>rsync -ai --mkpath host:some/extra/path/*.c some/extra/path/
 rsync -aiR host:some/extra/path/*.c ./
@@ -1133,7 +1251,7 @@ rsync -aiR host:some/extra/path/*.c ./
 <span id="opt-l"></span><dt id="opt--links"><code>--links</code>, <code>-l</code><a href="#opt--links" class="tgt"></a></dt><dd>
 <p>Add symlinks to the transferred files instead of noisily ignoring them with
 a &quot;non-regular file&quot; warning for each symlink encountered.  You can
-alternately silence the warning by specifying <a href="#opt--info"><code>--info=nonreg0</code></a>.</p>
+alternatively silence the warning by specifying <a href="#opt--info"><code>--info=nonreg0</code></a>.</p>
 <p>The default handling of symlinks is to recreate each symlink's unchanged
 value on the receiving side.</p>
 <p>See the <a href="#SYMBOLIC_LINKS">SYMBOLIC LINKS</a> section for multi-option info.</p>
@@ -1147,12 +1265,7 @@ is dropped from the transfer.</p>
 <p>This option supersedes any other options that affect symlinks in the
 transfer, since there are no symlinks left in the transfer.</p>
 <p>This option does not change the handling of existing symlinks on the
-receiving side, unlike versions of rsync prior to 2.6.3 which had the
-side-effect of telling the receiving side to also follow symlinks.  A
-modern rsync won't forward this option to a remote receiver (since only the
-sender needs to know about it), so this caveat should only affect someone
-using an rsync client older than 2.6.7 (which is when <code>-L</code> stopped being
-forwarded to the receiver).</p>
+receiving side.</p>
 <p>See the <a href="#opt--keep-dirlinks"><code>--keep-dirlinks</code></a> (<code>-K</code>) if you need a symlink to a
 directory to be treated as a real directory on the receiving side.</p>
 <p>See the <a href="#SYMBOLIC_LINKS">SYMBOLIC LINKS</a> section for multi-option info.</p>
@@ -1163,14 +1276,17 @@ directory to be treated as a real directory on the receiving side.</p>
 the copied tree.  Absolute symlinks are also treated like ordinary files,
 and so are any symlinks in the source path itself when <a href="#opt--relative"><code>--relative</code></a>
 is used.</p>
-<p>Note that the cut-off point is the top of the transfer, which is the part
-of the path that rsync isn't mentioning in the verbose output.  If you copy
-&quot;/src/subdir&quot; to &quot;/dest/&quot; then the &quot;subdir&quot; directory is a name inside the
-transfer tree, not the top of the transfer (which is /src) so it is legal
-for created relative symlinks to refer to other names inside the /src and
-/dest directories.  If you instead copy &quot;/src/subdir/&quot; (with a trailing
-slash) to &quot;/dest/subdir&quot; that would not allow symlinks to any files outside
-of &quot;subdir&quot;.</p>
+<p>A symlink is judged unsafe by a lexical test on its value, without resolving
+it on disk.  An absolute or empty target is always unsafe.  A relative
+target is unsafe if its &quot;..&quot; components would climb above the top of the
+transfer; a &quot;..&quot; that appears anywhere other than as a leading prefix (an
+embedded or trailing &quot;/..&quot;) is also treated as unsafe.  The top is set by
+how the source is specified: a trailing slash on the source (e.g.
+&quot;/src/subdir/&quot; copied to &quot;/dest/subdir&quot;) makes that directory itself the
+top, so a symlink may not point above it; without the trailing slash (e.g.
+&quot;/src/subdir&quot; copied to &quot;/dest/&quot;) the source's parent (&quot;/src&quot;) is the top,
+so &quot;subdir&quot; is a name inside the transfer and a relative symlink may point
+to any other name within it.</p>
 <p>Note that safe symlinks are only copied if <a href="#opt--links"><code>--links</code></a> was also
 specified or implied. The <code>--copy-unsafe-links</code> option has no extra effect
 when combined with <a href="#opt--copy-links"><code>--copy-links</code></a>.</p>
@@ -1186,40 +1302,101 @@ effective even when the sending side has munged symlinks (when it is using
 <a href="#opt--munge-links"><code>--munge-links</code></a>). It also affects deletions, since the file being
 present in the transfer prevents any matching file on the receiver from
 being deleted when the symlink is deemed to be unsafe and is skipped.</p>
-<p>This option must be combined with <a href="#opt--links"><code>--links</code></a> (or
-<a href="#opt--archive"><code>--archive</code></a>) to have any symlinks in the transfer to conditionally
-ignore. Its effect is superseded by <a href="#opt--copy-unsafe-links"><code>--copy-unsafe-links</code></a>.</p>
+<p>This option has no effect unless it is combined with <a href="#opt--links"><code>--links</code></a> (or
+an option that implies <a href="#opt--links"><code>--links</code></a> such as <a href="#opt--archive"><code>--archive</code></a>),
+because without <a href="#opt--links"><code>--links</code></a> there will not be any symlinks in the
+transfer.  Its effect is superseded by <a href="#opt--copy-unsafe-links"><code>--copy-unsafe-links</code></a>.</p>
 <p>Using this option in conjunction with <a href="#opt--relative"><code>--relative</code></a> may give
 unexpected results.</p>
 <p>See the <a href="#SYMBOLIC_LINKS">SYMBOLIC LINKS</a> section for multi-option info.</p>
 </dd>
 
+<dt id="opt--insecure-links"><code>--insecure-links</code><a href="#opt--insecure-links" class="tgt"></a></dt><dd>
+<p>By default rsync resolves the directory and file paths that the <strong>operator</strong>
+supplies on the command line with a defensive directory-tree walk that
+<strong>follows a symlink component only when it is owned by uid&nbsp;0 or by the
+running user</strong>, and
+refuses one owned by any other user.  This stops an attacker who can write
+inside one of those directories from planting a symlink that
+redirects a privileged rsync to a target outside the intended tree, while
+still honouring the operator's own symlinks.
+The rule is the same for absolute and relative paths.
+This applies to the destination directory and to the parameters to the
+following options: <code>--backup-dir</code>, <code>--temp-dir</code>/<code>-T</code>,
+<code>--partial-dir</code>, <code>--link-dest</code>, <code>--compare-dest</code>, <code>--copy-dest</code>, <code>--log-file</code>,
+<code>--password-file</code>, <code>--files-from</code>, <code>--include-from</code>, <code>--exclude-from</code>,
+<code>--filter</code> merge files, <code>--write-batch</code> and <code>--read-batch</code>.</p>
+<p><code>--insecure-links</code> turns that defence off, restoring the historical behaviour
+of following any symlink in those paths.  Use it only when you fully trust
+every directory along each operator-supplied path, as it re-exposes the
+symlink-redirection attacks the walk prevents.</p>
+<p>The option is <strong>local only</strong>: it is not sent to the remote side of the
+transfer.  A remote-shell peer that needs the opt-out must set it there, e.g.
+via <a href="#opt--rsync-path"><code>--rsync-path</code></a>), and a daemon never honours it&nbsp;-&#8288;-&#8288; a daemon that
+receives <code>--insecure-links</code> from a client refuses the request.  A daemon
+administrator who wants the legacy behaviour for a single trusted module sets
+&quot;<code>insecure links = yes</code>&quot; in that module's <strong>rsyncd.conf</strong>(5) section instead;
+a client can never enable it.</p>
+<p>See the <a href="#SYMBOLIC_LINKS">SYMBOLIC LINKS</a> section for multi-option info.</p>
+</dd>
+
+<dt id="opt--confine-root"><code>--confine-root=DIR</code><a href="#opt--confine-root" class="tgt"></a></dt><dd>
+<p>This bounds where the paths listed under <a href="#opt--insecure-links"><code>--insecure-links</code></a> are
+allowed to resolve: one that ends up outside DIR is refused, even if every
+symlink along it was owned by a trusted user.  The ownership walk asks who
+planted a link; this asks where the path came out.</p>
+<p>DIR must be absolute.  Nothing is confined by default, and
+<code>--confine-root=/</code> is a no-op.</p>
+<p>It exists for a wrapper that serves a restricted directory over a remote
+shell, <code>rrsync</code> being the one shipped here, which passes it automatically
+whenever its restricted dir is not &quot;<code>/</code>&quot;.  Such a wrapper can vet the argv
+it is handed, but filter rules travel over the protocol instead: a client
+can name a merge file outside the restricted dir in a dir-merge rule and
+have the server read it in as filter rules.  On a pull that needs neither
+<code>--delete</code> nor any verbosity, because an exclude-only merge (the &quot;<code>-</code>&quot;
+modifier) makes every line a pattern, and the client reads the file's
+contents off which of its own names went missing.  Confining the open is
+what closes that; a merge file inside DIR keeps working as before.</p>
+<p>A daemon ignores this option&nbsp;-&#8288;-&#8288; its module directory is already the
+boundary, and the option arrives in a client-supplied argv, so honouring it
+could only widen the module.</p>
+<p><a href="#opt--insecure-links"><code>--insecure-links</code></a> is refused alongside it.  That opt-out restores
+the historical open, which skips the walk that enforces the root, so the two
+together would silently mean no confinement at all.</p>
+<p>Like <a href="#opt--drop-D"><code>--drop-D</code></a>, it is not forwarded to the remote side: it is meant
+to be applied to one end of a connection by itself.</p>
+</dd>
+
 <dt id="opt--munge-links"><code>--munge-links</code><a href="#opt--munge-links" class="tgt"></a></dt><dd>
 <p>This option affects just one side of the transfer and tells rsync to munge
 symlink values when it is receiving files or unmunge symlink values when it
-is sending files.  The munged values make the symlinks unusable on disk but
-allows the original contents of the symlinks to be recovered.</p>
-<p>The server-side rsync often enables this option without the client's
+is sending files.
+&quot;Munging&quot; changes the symlink target so that the symlink cannot be followed
+successfully, but allows the original target of the symlink to be
+recovered. &quot;Unmunging&quot; reverses this process so that the symlink points to
+the original target.</p>
+<p>This option can be enabled on the server side without the client's
 knowledge, such as in an rsync daemon's configuration file or by an option
 given to the rrsync (restricted rsync) script.  When specified on the
 client side, specify the option normally if it is the client side that
-has/needs the munged symlinks, or use <code>-M--munge-links</code> to give the option
-to the server when it has/needs the munged symlinks.  Note that on a local
+has or needs the munged symlinks, or use <code>-M--munge-links</code> to give the option
+to the server when it has or needs the munged symlinks.  Note that on a local
 transfer, the client is the sender, so specifying the option directly
 unmunges symlinks while specifying it as a remote option munges symlinks.</p>
 <p>This option has no effect when sent to a daemon via <a href="#opt--remote-option"><code>--remote-option</code></a>
 because the daemon configures whether it wants munged symlinks via its
 &quot;<code>munge symlinks</code>&quot; parameter.</p>
-<p>The symlink value is munged/unmunged once it is in the transfer, so any
+<p>The symlink value is munged or unmunged once it is in the transfer, so any
 option that transforms symlinks into non-symlinks occurs prior to the
 munging/unmunging <strong>except</strong> for <a href="#opt--safe-links"><code>--safe-links</code></a>, which is a choice
 that the receiver makes, so it bases its decision on the munged/unmunged
-value.  This does mean that if a receiver has munging enabled, that using
-<a href="#opt--safe-links"><code>--safe-links</code></a> will cause all symlinks to be ignored (since they
-are all absolute).</p>
-<p>The method that rsync uses to munge the symlinks is to prefix each one's
-value with the string &quot;/rsyncd-munged/&quot;.  This prevents the links from
-being used as long as the directory does not exist.  When this option is
+value.  This does mean that if a receiver has munging enabled, using
+<a href="#opt--safe-links"><code>--safe-links</code></a> will cause all symlinks to be ignored (since munging
+makes them all absolute).</p>
+<p>The method that rsync uses to munge a symlink is to prefix its
+value with the string &quot;/rsyncd-munged/&quot;.  This prevents the link from
+being used, provided that the /rsyncd-munged directory does not exist.
+When this option is
 enabled, rsync will refuse to run if that path is a directory or a symlink
 to a directory (though it only checks at startup).  See also the
 &quot;munge-symlinks&quot; python script in the support directory of the source code
@@ -1239,16 +1416,12 @@ the way of the new symlink, including a directory hierarchy (as long as
 receiving side.</p>
 <p><code>--copy-dirlinks</code> applies to all symlinks to directories in the source.  If
 you want to follow only a few specified symlinks, a trick you can use is to
-pass them as additional source args with a trailing slash, using
+pass them as additional source arguments with a trailing slash, using
 <a href="#opt--relative"><code>--relative</code></a> to make the paths match up right.  For example:</p>
 <blockquote>
 <pre><code>rsync -r --relative src/./ src/./follow-me/ dest/
 </code></pre>
 </blockquote>
-<p>This works because rsync calls <strong>lstat</strong>(2) on the source arg as given, and
-the trailing slash makes <strong>lstat</strong>(2) follow the symlink, giving rise to a
-directory in the file-list which overrides the symlink found during the
-scan of &quot;src/./&quot;.</p>
 <p>See the <a href="#SYMBOLIC_LINKS">SYMBOLIC LINKS</a> section for multi-option info.</p>
 </dd>
 
@@ -1258,13 +1431,13 @@ though it were a real directory, but only if it matches a real directory
 from the sender.  Without this option, the receiver's symlink would be
 deleted and replaced with a real directory.</p>
 <p>For example, suppose you transfer a directory &quot;foo&quot; that contains a file
-&quot;file&quot;, but &quot;foo&quot; is a symlink to directory &quot;bar&quot; on the receiver.  Without
+&quot;file&quot;, but on the receiver, &quot;foo&quot; is a symlink to directory &quot;bar&quot;.  Without
 <code>--keep-dirlinks</code>, the receiver deletes symlink &quot;foo&quot;, recreates it as a
 directory, and receives the file into the new directory.  With
 <code>--keep-dirlinks</code>, the receiver keeps the symlink and &quot;file&quot; ends up in
 &quot;bar&quot;.</p>
-<p>One note of caution: if you use <code>--keep-dirlinks</code>, you must trust all the
-symlinks in the copy or enable the <a href="#opt--munge-links"><code>--munge-links</code></a> option on the
+<p>One note of caution: if you use <code>--keep-dirlinks</code>, you must either trust all the
+symlinks in the copy, or enable the <a href="#opt--munge-links"><code>--munge-links</code></a> option on the
 receiving side!  If it is possible for an untrusted user to create their
 own symlink to any real directory, the user could then (on a subsequent
 copy) replace the symlink with a real directory and affect the content of
@@ -1341,7 +1514,7 @@ that all non-masked bits get enabled).  If you'd care to make this latter
 behavior easier to type, you could define a popt alias for it, such as
 putting this line in the file <code>~/.popt</code> (the following defines the <code>-Z</code>
 option, and includes <code>--no-g</code> to use the default group of the destination
-dir):</p>
+directory):</p>
 <blockquote>
 <pre><code> rsync alias -Z --no-p --no-g --chmod=ugo=rwX
 </code></pre>
@@ -1353,20 +1526,14 @@ dir):</p>
 </blockquote>
 <p>(Caveat: make sure that <code>-a</code> does not follow <code>-Z</code>, or it will re-enable the
 two <code>--no-*</code> options mentioned above.)</p>
-<p>The preservation of the destination's setgid bit on newly-created
-directories when <code>--perms</code> is off was added in rsync 2.6.7.  Older rsync
-versions erroneously preserved the three special permission bits for
-newly-created files when <code>--perms</code> was off, while overriding the
-destination's setgid bit setting on a newly-created directory.  Default ACL
-observance was added to the ACL patch for rsync 2.6.7, so older (or
-non-ACL-enabled) rsyncs use the umask even if default ACLs are present.
-(Keep in mind that it is the version of the receiving rsync that affects
-these behaviors.)</p>
+<p>Note that if the remote rsync is older than 2.6.7 (March 2006) and it is
+the receiver, the behavior when <code>--perms</code> is off may differ from that
+described above.</p>
 </dd>
 
 <span id="opt-E"></span><dt id="opt--executability"><code>--executability</code>, <code>-E</code><a href="#opt--executability" class="tgt"></a></dt><dd>
-<p>This option causes rsync to preserve the executability (or
-non-executability) of regular files when <a href="#opt--perms"><code>--perms</code></a> is not enabled.
+<p>This option causes rsync to preserve the executability or
+non-executability of regular files when <a href="#opt--perms"><code>--perms</code></a> is not enabled.
 A regular file is considered to be executable if at least one 'x' is turned
 on in its permissions.  When an existing destination file's executability
 differs from that of the corresponding source file, rsync modifies the
@@ -1443,6 +1610,14 @@ consistent executability across all bits:</p>
 <pre><code>--chmod=D2775,F664
 </code></pre>
 </blockquote>
+<p>Symbolic permission-copy modes are also allowed, such as <code>g=u</code>, <code>o=g</code> or
+<code>g-o</code>.  A permission-copy item may copy from one class only (<code>u</code>, <code>g</code> or
+<code>o</code>) and cannot be combined with <code>rwxXst</code> permission letters in the same
+item.  Use comma-separated items when you need both behaviours, such as
+<code>g=o,o=</code>.</p>
+<p>A permission-copy <code>=</code> item also clears the special bit for each destination
+class it updates (<code>u</code> clears setuid, <code>g</code> clears setgid, and <code>o</code> clears
+sticky), matching GNU <strong>chmod</strong> behaviour.</p>
 <p>It is also legal to specify multiple <code>--chmod</code> options, as each additional
 option is just appended to the list of changes to make.</p>
 <p>See the <a href="#opt--perms"><code>--perms</code></a> and <a href="#opt--executability"><code>--executability</code></a> options for how the
@@ -1450,8 +1625,9 @@ resulting permission value can be applied to the files in the transfer.</p>
 </dd>
 
 <span id="opt-o"></span><dt id="opt--owner"><code>--owner</code>, <code>-o</code><a href="#opt--owner" class="tgt"></a></dt><dd>
-<p>This option causes rsync to set the owner of the destination file to be the
-same as the source file, but only if the receiving rsync is being run as
+<p>This option causes rsync to set the owner of each destination filesystem
+object (file, directory, etc.) to be the
+same as the source object, but only if the receiving rsync is being run as
 the super-user (see also the <a href="#opt--super"><code>--super</code></a> and <a href="#opt--fake-super"><code>--fake-super</code></a>
 options).  Without this option, the owner of new and/or transferred files
 are set to the invoking user on the receiving side.</p>
@@ -1461,8 +1637,9 @@ may fall back to using the ID number in some circumstances (see also the
 </dd>
 
 <span id="opt-g"></span><dt id="opt--group"><code>--group</code>, <code>-g</code><a href="#opt--group" class="tgt"></a></dt><dd>
-<p>This option causes rsync to set the group of the destination file to be the
-same as the source file.  If the receiving program is not running as the
+<p>This option causes rsync to set the group of each destination filesystem
+object (file, directory, etc.) to be the
+same as the source object.  If the receiving program is not running as the
 super-user (or if <code>--no-super</code> was specified), only groups that the
 invoking user on the receiving side is a member of will be preserved.
 Without this option, the group is set to the default group of the invoking
@@ -1497,6 +1674,34 @@ by specifying <a href="#opt--info"><code>--info=nonreg0</code></a>.</p>
 <a href="#opt--specials"><code>--specials</code></a>&quot;.</p>
 </dd>
 
+<dt id="opt--drop-D"><code>--drop-D</code><a href="#opt--drop-D" class="tgt"></a></dt><dd>
+<p>This tells the receiving rsync to refuse to create device files and
+special files, whatever the transfer requested.  Entries for them are
+skipped exactly as if <a href="#opt-D"><code>-D</code></a> had not been used, with the usual
+&quot;non-regular file&quot; warning.</p>
+<p>This differs from <code>--no-D</code> in that it changes only what is created, not
+how the file list is encoded.  <code>--no-D</code> also turns off the rdev fields
+that devices and special files carry on the wire, so applying it to one
+end of a connection alone leaves the two ends disagreeing about the
+encoding and the transfer fails.  <code>--drop-D</code> can therefore be added on the
+receiving side by itself, which is what it exists for&nbsp;-&#8288;-&#8288; the <code>rrsync</code>
+wrapper uses it to stop a restricted directory's clients creating device
+and special files in it.  Nodes already present there are left alone.</p>
+<p>Because it only withholds creation, it has no effect on a sending rsync.</p>
+<p>This option is not forwarded to the remote side, since its whole purpose
+is to be applied to one end of a connection by itself.  It therefore
+affects the rsync process you give it to and no other: on a local copy, or
+on the receiving end of a <code>--server</code> invocation such as the one rrsync
+builds.  To set it on a remote receiver from the command line, send it
+explicitly with <a href="#opt--remote-option"><code>--remote-option</code></a> (<code>-M</code>):</p>
+<blockquote>
+<pre><code>rsync -av -M--drop-D src/ host:dest/
+</code></pre>
+</blockquote>
+<p>Passing a plain <code>--drop-D</code> to a push affects only the local sender, where
+it does nothing.</p>
+</dd>
+
 <dt id="opt--copy-devices"><code>--copy-devices</code><a href="#opt--copy-devices" class="tgt"></a></dt><dd>
 <p>This tells rsync to treat a device on the sending side as a regular file,
 allowing it to be copied to a normal destination file (or another device
@@ -1514,20 +1719,20 @@ receiving side of the transfer, especially when running rsync as root.</p>
 </dd>
 
 <span id="opt-t"></span><dt id="opt--times"><code>--times</code>, <code>-t</code><a href="#opt--times" class="tgt"></a></dt><dd>
-<p>This tells rsync to transfer modification times along with the files and
-update them on the remote system.  Note that if this option is not used,
+<p>This tells rsync to set the modification times of the destination files
+(including directories, symlinks, devices, etc.) to be the same as the
+source files.
+Note that if this option is not used,
 the optimization that excludes files that have not been modified cannot be
 effective; in other words, a missing <code>-t</code> (or <a href="#opt-a"><code>-a</code></a>) will cause the
 next transfer to behave as if it used <a href="#opt--ignore-times"><code>--ignore-times</code></a> (<code>-I</code>),
-causing all files to be updated (though rsync's delta-transfer algorithm
+causing all files to be updated. (Although rsync's delta-transfer algorithm
 will make the update fairly efficient if the files haven't actually
-changed, you're much better off using <code>-t</code>).</p>
-<p>A modern rsync that is using transfer protocol 30 or 31 conveys a modify
-time using up to 8-bytes. If rsync is forced to speak an older protocol
-(perhaps due to the remote rsync being older than 3.0.0) a modify time is
-conveyed using 4-bytes. Prior to 3.2.7, these shorter values could convey
-a date range of 13-Dec-1901 to 19-Jan-2038.  Beginning with 3.2.7, these
-4-byte values now convey a date range of 1-Jan-1970 to 7-Feb-2106.  If you
+changed, you're much better off using <code>-t</code>.)</p>
+<p>If the negotiated protocol is older than 30&nbsp;-&#8288;-&#8288; usually because the remote
+rsync is older than 3.0.0 (March 2008), but also if <a href="#opt--protocol"><code>--protocol</code></a>
+forces it&nbsp;-&#8288;-&#8288; the range of modification times that can be conveyed is
+restricted.  If you
 have files dated older than 1970, make sure your rsync executables are
 upgraded so that the full range of dates can be conveyed.</p>
 </dd>
@@ -1539,9 +1744,6 @@ the same value as the source files.</p>
 to make the sending and receiving systems have the same access times on the
 transferred files without needing to run rsync an extra time after a file
 is transferred.</p>
-<p>Note that some older rsync versions (prior to 3.2.0) may have been built
-with a pre-release <code>--atimes</code> patch that does not imply
-<a href="#opt--open-noatime"><code>--open-noatime</code></a> when this option is repeated.</p>
 </dd>
 
 <dt id="opt--open-noatime"><code>--open-noatime</code><a href="#opt--open-noatime" class="tgt"></a></dt><dd>
@@ -1619,12 +1821,13 @@ daemon's rsyncd.conf file.</p>
 
 <span id="opt-S"></span><dt id="opt--sparse"><code>--sparse</code>, <code>-S</code><a href="#opt--sparse" class="tgt"></a></dt><dd>
 <p>Try to handle sparse files efficiently so they take up less space on the
-destination.  If combined with <a href="#opt--inplace"><code>--inplace</code></a> the file created might
-not end up with sparse blocks with some combinations of kernel version
-and/or filesystem type.  If <a href="#opt--whole-file"><code>--whole-file</code></a> is in effect (e.g. for a
-local copy) then it will always work because rsync truncates the file prior
-to writing out the updated version.</p>
-<p>Note that versions of rsync older than 3.1.3 will reject the combination of
+destination.  This relies on the destination filesystem supporting sparse
+files, that is, files where some parts of the file don't have corresponding
+disk blocks allocated for them because they contain all zero bytes.</p>
+<p>If combined with <a href="#opt--inplace"><code>--inplace</code></a> the file created may not end up with
+sparse blocks (depending on the filesystem type and kernel version),
+unless the <a href="#opt--whole-file"><code>--whole-file</code></a> option is also in effect.  Note that versions
+of rsync older than 3.1.3 (January 2018) will reject the combination of
 <code>--sparse</code> and <a href="#opt--inplace"><code>--inplace</code></a>.</p>
 </dd>
 
@@ -1644,13 +1847,14 @@ filesystem type support creating holes in the allocated data.</p>
 </dd>
 
 <span id="opt-n"></span><dt id="opt--dry-run"><code>--dry-run</code>, <code>-n</code><a href="#opt--dry-run" class="tgt"></a></dt><dd>
-<p>This makes rsync perform a trial run that doesn't make any changes (and
-produces mostly the same output as a real run).  It is most commonly used
+<p>This makes rsync perform a trial run that doesn't make any changes, and
+produces mostly the same output as a real run.  It is most commonly used
 in combination with the <a href="#opt--verbose"><code>--verbose</code></a> (<code>-v</code>) and/or
 <a href="#opt--itemize-changes"><code>--itemize-changes</code></a> (<code>-i</code>) options to see what an rsync command is
 going to do before one actually runs it.</p>
 <p>The output of <a href="#opt--itemize-changes"><code>--itemize-changes</code></a> is supposed to be exactly the
-same on a dry run and a subsequent real run (barring intentional trickery
+same on a dry run and a subsequent real run (barring external changes to
+the source or destination
 and system call failures); if it isn't, that's a bug.  Other output should
 be mostly unchanged, but may differ in some areas.  Notably, a dry run does
 not send the actual data for file transfers, so <a href="#opt--progress"><code>--progress</code></a> has no
@@ -1660,8 +1864,8 @@ run where no file transfers were needed.</p>
 </dd>
 
 <span id="opt-W"></span><dt id="opt--whole-file"><code>--whole-file</code>, <code>-W</code><a href="#opt--whole-file" class="tgt"></a></dt><dd>
-<p>This option disables rsync's delta-transfer algorithm, which causes all
-transferred files to be sent whole.  The transfer may be faster if this
+<p>This option disables rsync's delta-transfer algorithm, causing the whole of
+all transferred files to be sent.  The transfer may be faster if this
 option is used when the bandwidth between the source and destination
 machines is higher than the bandwidth to disk (especially when the &quot;disk&quot;
 is actually a networked filesystem).  This is the default when both the
@@ -1679,10 +1883,11 @@ trying to minimize the writes to the destination file (if combined with
 
 <span id="opt--cc"></span><dt id="opt--checksum-choice"><code>--checksum-choice=STR</code>, <code>--cc=STR</code><a href="#opt--checksum-choice" class="tgt"></a></dt><dd>
 <p>This option overrides the checksum algorithms.  If one algorithm name is
-specified, it is used for both the transfer checksums and (assuming
-<a href="#opt--checksum"><code>--checksum</code></a> is specified) the pre-transfer checksums.  If two
+specified, it is used for both the transfer checksums and the pre-transfer
+checksums (note that the pre-transfer checksum is only performed if
+<a href="#opt--checksum"><code>--checksum</code></a> is specified).  If two
 comma-separated names are supplied, the first name affects the transfer
-checksums, and the second name affects the pre-transfer checksums (<code>-c</code>).</p>
+checksums, and the second name affects the pre-transfer checksums.</p>
 <p>The checksum options that you may be able to use are:</p>
 <ul>
 <li><code>auto</code> (the default automatic choice)</li>
@@ -1702,9 +1907,11 @@ transferred data.  If &quot;none&quot; is specified for the second (or only) nam
 the <a href="#opt--checksum"><code>--checksum</code></a> option cannot be used.</p>
 <p>The &quot;auto&quot; option is the default, where rsync bases its algorithm choice on
 a negotiation between the client and the server as follows:</p>
-<p>When both sides of the transfer are at least 3.2.0, rsync chooses the first
-algorithm in the client's list of choices that is also in the server's list
-of choices.  If no common checksum choice is found, rsync exits with
+<p>When both sides of the transfer are at least 3.2.0 (released June 2020),
+each side chooses its own
+most-preferred algorithm that also appears in the peer's list.  Both sides
+order their lists strongest-first, so they converge on the strongest mutual
+choice.  If no common checksum choice is found, rsync exits with
 an error.  If the remote rsync is too old to support checksum negotiation,
 a value is chosen based on the protocol version (which chooses between MD5
 and various flavors of MD4 based on protocol age).</p>
@@ -1782,28 +1989,28 @@ use a naming idiom that lets rsync avoid transferring files that are not
 yet finished (e.g. name the file &quot;foo.new&quot; when it is written, rename it to
 &quot;foo&quot; when it is done, and then use the option <a href="#opt--exclude"><code>--exclude='*.new'</code></a>
 for the rsync transfer).</p>
-<p>Starting with 3.1.0, rsync will skip the sender-side removal (and output an
-error) if the file's size or modify time has not stayed unchanged.</p>
-<p>Starting with 3.2.6, a local rsync copy will ensure that the sender does
+<p>Rsync will skip the sender-side removal, and output an
+error, if the file's size or modify time has not stayed unchanged.</p>
+<p>If the copy is local, rsync will ensure that the sender does
 not remove a file the receiver just verified, such as when the user
 accidentally makes the source and destination directory the same path.</p>
 </dd>
 
 <dt id="opt--delete"><code>--delete</code><a href="#opt--delete" class="tgt"></a></dt><dd>
-<p>This tells rsync to delete extraneous files from the receiving side (ones
-that aren't on the sending side), but only for the directories that are
+<p>This tells rsync to delete extraneous files from the receiving side (those
+that don't exist on the sending side), but only for the directories that are
 being synchronized.  You must have asked rsync to send the whole directory
-(e.g. &quot;<code>dir</code>&quot; or &quot;<code>dir/</code>&quot;) without using a wildcard for the directory's
-contents (e.g. &quot;<code>dir/*</code>&quot;) since the wildcard is expanded by the shell and
+(e.g. &quot;<code>dir</code>&quot; or &quot;<code>dir/</code>&quot;), rather than asking for all the files in a
+directory via a wildcard (e.g. &quot;<code>dir/*</code>&quot;), since the wildcard is
+expanded by the shell and
 rsync thus gets a request to transfer individual files, not the files'
 parent directory.  Files that are excluded from the transfer are also
 excluded from being deleted unless you use the <a href="#opt--delete-excluded"><code>--delete-excluded</code></a>
 option or mark the rules as only matching on the sending side (see the
 include/exclude modifiers in the <a href="#FILTER_RULES">FILTER RULES</a> section).</p>
-<p>Prior to rsync 2.6.7, this option would have no effect unless
-<a href="#opt--recursive"><code>--recursive</code></a> was enabled.  Beginning with 2.6.7, deletions will
-also occur when <a href="#opt--dirs"><code>--dirs</code></a> (<code>-d</code>) is enabled, but only for
-directories whose contents are being copied.</p>
+<p>This option has no effect unless either <a href="#opt--recursive"><code>--recursive</code></a> or
+<a href="#opt--dirs"><code>--dirs</code></a> (<code>-d</code>) is enabled.  In the latter case, deletions only
+occur in directories whose contents are being copied.</p>
 <p>This option can be dangerous if used incorrectly! It is a very good idea to
 first try a run using the <a href="#opt--dry-run"><code>--dry-run</code></a> (<code>-n</code>) option to see what
 files are going to be deleted.</p>
@@ -1812,10 +2019,11 @@ at the destination will be automatically disabled.  This is to prevent
 temporary filesystem failures (such as NFS errors) on the sending side from
 causing a massive deletion of files on the destination.  You can override
 this with the <a href="#opt--ignore-errors"><code>--ignore-errors</code></a> option.</p>
-<p>The <code>--delete</code> option may be combined with one of the -&#8288;-&#8288;delete-WHEN options
+<p>The <code>--delete</code> option may be combined with one of the -&#8288;-&#8288;delete-&#8288;WHEN options
 without conflict, as well as <a href="#opt--delete-excluded"><code>--delete-excluded</code></a>.  However, if none
 of the <code>--delete-WHEN</code> options are specified, rsync will choose the
-<a href="#opt--delete-during"><code>--delete-during</code></a> algorithm when talking to rsync 3.0.0 or newer,
+<a href="#opt--delete-during"><code>--delete-during</code></a> algorithm when talking to rsync 3.0.0 (March
+2008) or newer,
 or the <a href="#opt--delete-before"><code>--delete-before</code></a> algorithm when talking to an older rsync.
 See also <a href="#opt--delete-delay"><code>--delete-delay</code></a> and <a href="#opt--delete-after"><code>--delete-after</code></a>.</p>
 </dd>
@@ -1838,8 +2046,8 @@ files in the transfer into memory at once (see <a href="#opt--recursive"><code>-
 as the transfer happens.  The per-directory delete scan is done right
 before each directory is checked for updates, so it behaves like a more
 efficient <a href="#opt--delete-before"><code>--delete-before</code></a>, including doing the deletions prior to
-any per-directory filter files being updated.  This option was first added
-in rsync version 2.6.4.  See <a href="#opt--delete"><code>--delete</code></a> (which is implied) for more
+any per-directory filter files being updated.
+See <a href="#opt--delete"><code>--delete</code></a> (which is implied) for more
 details on file-deletion.</p>
 </dd>
 
@@ -1848,9 +2056,9 @@ details on file-deletion.</p>
 the transfer (like <a href="#opt--delete-during"><code>--delete-during</code></a>), and then removed after the
 transfer completes.  This is useful when combined with
 <a href="#opt--delay-updates"><code>--delay-updates</code></a> and/or <a href="#opt--fuzzy"><code>--fuzzy</code></a>, and is more efficient
-than using <a href="#opt--delete-after"><code>--delete-after</code></a> (but can behave differently, since
+than using <a href="#opt--delete-after"><code>--delete-after</code></a>, but can behave differently, since
 <a href="#opt--delete-after"><code>--delete-after</code></a> computes the deletions in a separate pass after
-all updates are done).  If the number of removed files overflows an
+all updates are done.  If the number of removed files overflows an
 internal buffer, a temporary file will be created on the receiving side to
 hold the names (it is removed while open, so you shouldn't see it during
 the transfer).  If the creation of the temporary file fails, rsync will try
@@ -1901,7 +2109,7 @@ is no longer there.</p>
 
 <dt id="opt--delete-missing-args"><code>--delete-missing-args</code><a href="#opt--delete-missing-args" class="tgt"></a></dt><dd>
 <p>This option takes the behavior of the (implied)
-<a href="#opt--ignore-missing-args"><code>--ignore-missing-args</code></a> option a step farther: each missing arg
+<a href="#opt--ignore-missing-args"><code>--ignore-missing-args</code></a> option a step farther: each missing argument
 will become a deletion request of the corresponding destination file on the
 receiving side (should it exist).  If the destination file is a non-empty
 directory, it will only be successfully deleted if <a href="#opt--force"><code>--force</code></a> or
@@ -1920,9 +2128,6 @@ I/O errors.</p>
 <p>This option tells rsync to delete a non-empty directory when it is to be
 replaced by a non-directory.  This is only relevant if deletions are not
 active (see <a href="#opt--delete"><code>--delete</code></a> for details).</p>
-<p>Note for older rsync versions: <code>--force</code> used to still be required when
-using <a href="#opt--delete-after"><code>--delete-after</code></a>, and it used to be non-functional unless the
-<a href="#opt--recursive"><code>--recursive</code></a> option was also enabled.</p>
 </dd>
 
 <dt id="opt--max-delete"><code>--max-delete=NUM</code><a href="#opt--max-delete" class="tgt"></a></dt><dd>
@@ -1931,19 +2136,19 @@ limit is exceeded, all further deletions are skipped through the end of the
 transfer.  At the end, rsync outputs a warning (including a count of the
 skipped deletions) and exits with an error code of 25 (unless some more
 important error condition also occurred).</p>
-<p>Beginning with version 3.0.0, you may specify <code>--max-delete=0</code> to be warned
+<p>You may specify <code>--max-delete=0</code> to be warned
 about any extraneous files in the destination without removing any of them.
-Older clients interpreted this as &quot;unlimited&quot;, so if you don't know what
-version the client is, you can use the less obvious <code>--max-delete=-1</code> as a
-backward-compatible way to specify that no deletions be allowed (though
-really old versions didn't warn when the limit was exceeded).</p>
+CAUTION: a client rsync older than 3.0.0 (March 2008) treats
+<code>--max-delete=0</code> as unlimited, so use <code>--max-delete=-1</code> if the command
+might be run by such an old rsync.  (A 3.0.0 or newer client protects an
+older remote by forwarding the option as <code>--max-delete=-1</code>.)</p>
 </dd>
 
 <dt id="opt--max-size"><code>--max-size=SIZE</code><a href="#opt--max-size" class="tgt"></a></dt><dd>
 <p>This tells rsync to avoid transferring any file that is larger than the
 specified SIZE.  A numeric value can be suffixed with a string to indicate
-the numeric units or left unqualified to specify bytes.  Feel free to use a
-fractional value along with the units, such as <code>--max-size=1.5m</code>.</p>
+the numeric units or left unqualified to specify bytes, and the numeric
+value can have a fractional part, such as <code>--max-size=1.5m</code>.</p>
 <p>This option is a <a href="#TRANSFER_RULES">TRANSFER RULE</a>, so don't expect any
 exclude side effects.</p>
 <p>The first letter of a units string can be <code>B</code> (bytes), <code>K</code> (kilo), <code>M</code>
@@ -1957,14 +2162,12 @@ byte in the indicated direction.  The largest possible value is usually
 <code>8192P-1</code>.</p>
 <p>Examples: <code>--max-size=1.5mb-1</code> is 1499999 bytes, and <code>--max-size=2g+1</code> is
 2147483649 bytes.</p>
-<p>Note that rsync versions prior to 3.1.0 did not allow <code>--max-size=0</code>.</p>
 </dd>
 
 <dt id="opt--min-size"><code>--min-size=SIZE</code><a href="#opt--min-size" class="tgt"></a></dt><dd>
 <p>This tells rsync to avoid transferring any file that is smaller than the
 specified SIZE, which can help in not transferring small, junk files.  See
 the <a href="#opt--max-size"><code>--max-size</code></a> option for a description of SIZE and other info.</p>
-<p>Note that rsync versions prior to 3.1.0 did not allow <code>--min-size=0</code>.</p>
 </dd>
 
 <dt id="opt--max-alloc"><code>--max-alloc=SIZE</code><a href="#opt--max-alloc" class="tgt"></a></dt><dd>
@@ -1973,14 +2176,18 @@ For most people this limit works just fine and prevents a protocol error
 causing rsync to request massive amounts of memory.  However, if you have
 many millions of files in a transfer, a large amount of server memory, and
 you don't want to split up your transfer into multiple parts, you can
-increase the per-allocation limit to something larger and rsync will
+increase the per-allocation limit to something larger, allowing rsync to
 consume more memory.</p>
 <p>Keep in mind that this is not a limit on the total size of allocated
 memory.  It is a sanity-check value for each individual allocation.</p>
 <p>See the <a href="#opt--max-size"><code>--max-size</code></a> option for a description of how SIZE can be
 specified.  The default suffix if none is given is bytes.</p>
-<p>Beginning in 3.2.7, a value of 0 is an easy way to specify SIZE_MAX (the
-largest limit possible).</p>
+<p>Beginning in 3.2.7, a value of 0 was an easy way to specify SIZE_MAX (the
+largest limit possible).  However, beginning with 3.5.0, a value of 0 is
+rejected as invalid for security reasons (a 0-byte cap could be used to
+disable the allocation limit, which could lead to a denial-of-service via
+memory exhaustion).  Use an explicit very large value if you want a very
+high limit.</p>
 <p>You can set a default value using the environment variable
 <a href="#RSYNC_MAX_ALLOC"><code>RSYNC_MAX_ALLOC</code></a> using the same SIZE values as supported by this
 option.  If the remote rsync doesn't understand the <code>--max-alloc</code> option,
@@ -1993,32 +2200,32 @@ which will make rsync avoid sending the option to the remote side (because
 <p>This forces the block size used in rsync's delta-transfer algorithm to a
 fixed value.  It is normally selected based on the size of each file being
 updated.  See the technical report for details.</p>
-<p>Beginning in 3.2.3 the SIZE can be specified with a suffix as detailed in
-the <a href="#opt--max-size"><code>--max-size</code></a> option.  Older versions only accepted a byte count.</p>
+<p>The SIZE can be specified with a suffix as detailed in
+the <a href="#opt--max-size"><code>--max-size</code></a> option.</p>
 </dd>
 
 <span id="opt-e"></span><dt id="opt--rsh"><code>--rsh=COMMAND</code>, <code>-e</code><a href="#opt--rsh" class="tgt"></a></dt><dd>
 <p>This option allows you to choose an alternative remote shell program to use
 for communication between the local and remote copies of rsync.  Typically,
-rsync is configured to use ssh by default, but you may prefer to use rsh on
-a local network.</p>
+rsync is configured to use ssh by default.</p>
 <p>If this option is used with <code>[user@]host::module/path</code>, then the remote
 shell <u>COMMAND</u> will be used to run an rsync daemon on the remote host, and
 all data will be transmitted through that remote shell connection, rather
 than through a direct socket connection to a running rsync daemon on the
 remote host.  See the <a href="#USING_RSYNC-DAEMON_FEATURES_VIA_A_REMOTE-SHELL_CONNECTION">USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL
 CONNECTION</a> section above.</p>
-<p>Beginning with rsync 3.2.0, the <a href="#RSYNC_PORT"><code>RSYNC_PORT</code></a> environment variable will
+<p>The <a href="#RSYNC_PORT"><code>RSYNC_PORT</code></a> environment variable will
 be set when a daemon connection is being made via a remote-shell
 connection.  It is set to 0 if the default daemon port is being assumed, or
 it is set to the value of the rsync port that was specified via either the
-<a href="#opt--port"><code>--port</code></a> option or a non-empty port value in an <code>rsync://</code> URL.
-This allows the script to discern if a non-default port is being requested,
-allowing for things such as an SSL or stunnel helper script to connect to a
-default or alternate port.</p>
+<a href="#opt--port"><code>--port</code></a> option or a non-empty port value in an <code>rsync://</code> URL (for
+example <code>rsync://host.example.com:984</code>).  This is useful if the program
+being run is not actually rsync but rather something such as an SSL or
+stunnel helper script; the script can use <code>RSYNC_PORT</code> to determine whether
+it should connect to a default or alternate port.</p>
 <p>Command-line arguments are permitted in COMMAND provided that COMMAND is
 presented to rsync as a single argument.  You must use spaces (not tabs or
-other whitespace) to separate the command and args from each other, and you
+other whitespace) to separate the command and arguments from each other, and you
 can use single- and/or double-quotes to preserve spaces in an argument (but
 not backslashes).  Note that doubling a single-quote inside a single-quoted
 string gives you a single-quote; likewise for double-quotes (though you
@@ -2073,12 +2280,12 @@ cause rsync to have a different idea about what data to expect next over
 the socket, and that will make it fail in a cryptic fashion.</p>
 <p>Note that you should use a separate <code>-M</code> option for each remote option you
 want to pass.  On older rsync versions, the presence of any spaces in the
-remote-option arg could cause it to be split into separate remote args, but
+remote-option argument could cause it to be split into separate remote arguments, but
 this requires the use of <a href="#opt--old-args"><code>--old-args</code></a> in a modern rsync.</p>
 <p>When performing a local transfer, the &quot;local&quot; side is the sender and the
 &quot;remote&quot; side is the receiver.</p>
 <p>Note some versions of the popt option-parsing library have a bug in them
-that prevents you from using an adjacent arg with an equal in it next to a
+that prevents you from using an adjacent argument with an equal in it next to a
 short option letter (e.g. <code>-M--log-file=/tmp/foo</code>).  If this bug affects
 your version of popt, you can use the version of popt that is included with
 rsync.</p>
@@ -2156,8 +2363,8 @@ combination with a recursive transfer.</p>
 <p>You may use as many <code>--filter</code> options on the command line as you like to
 build up the list of files to exclude.  If the filter contains whitespace,
 be sure to quote it so that the shell gives the rule to rsync as a single
-argument.  The text below also mentions that you can use an underscore to
-replace the space that separates a rule from its arg.</p>
+argument.  You can use an underscore instead of a space to separate a rule
+from its argument.</p>
 <p>See the <a href="#FILTER_RULES">FILTER RULES</a> section for detailed information on this option.</p>
 </dd>
 
@@ -2222,8 +2429,8 @@ before adding any further rules.</p>
 </dd>
 
 <dt id="opt--files-from"><code>--files-from=FILE</code><a href="#opt--files-from" class="tgt"></a></dt><dd>
-<p>Using this option allows you to specify the exact list of files to transfer
-(as read from the specified FILE or '<code>-</code>' for standard input).  It also
+<p>Using this option tells rsync to read the exact list of files to transfer
+from FILE (or standard input if FILE is '<code>-</code>').  It also
 tweaks the default behavior of rsync to make transferring just the
 specified files and directories easier:</p>
 <ul>
@@ -2241,8 +2448,12 @@ options are parsed (e.g. <a href="#opt-a"><code>-a</code></a> works the same bef
 <code>--files-from</code>, as does <code>--no-R</code> and all other options).</li>
 </ul>
 <p>The filenames that are read from the FILE are all relative to the source
-dir&nbsp;-&#8288;-&#8288; any leading slashes are removed and no &quot;..&quot; references are allowed
-to go higher than the source dir.  For example, take this command:</p>
+directory: any leading slash is removed, and &quot;..&quot; components are resolved away so
+an entry cannot rise above the source directory&nbsp;-&#8288;-&#8288; e.g. &quot;../foo&quot; is taken as &quot;foo&quot;
+within the source directory.  An entry that still contains an active &quot;..&quot; after
+that resolution (one that cannot be collapsed) is rejected with an error.
+Blank entries are ignored, as are whole-entry comments that start with '<code>;</code>'
+or '<code>#</code>'.  For example, take this command:</p>
 <blockquote>
 <pre><code>rsync -a --files-from=/tmp/foo /usr remote:/backup
 </code></pre>
@@ -2250,9 +2461,9 @@ to go higher than the source dir.  For example, take this command:</p>
 <p>If /tmp/foo contains the string &quot;bin&quot; (or even &quot;/bin&quot;), the /usr/bin
 directory will be created as /backup/bin on the remote host.  If it
 contains &quot;bin/&quot; (note the trailing slash), the immediate contents of the
-directory would also be sent (without needing to be explicitly mentioned in
-the file&nbsp;-&#8288;-&#8288; this began in version 2.6.4).  In both cases, if the
-<a href="#opt-r"><code>-r</code></a> option was enabled, that dir's entire hierarchy would also be
+directory would also be sent, without needing to be explicitly mentioned in
+the file.  In both cases, if the
+<a href="#opt-r"><code>-r</code></a> option was enabled, that directory's entire hierarchy would also be
 transferred (keep in mind that <a href="#opt-r"><code>-r</code></a> needs to be specified
 explicitly with <code>--files-from</code>, since it is not implied by <a href="#opt-a"><code>-a</code></a>.
 Also note that the effect of the (enabled by default) <a href="#opt-r"><code>-r</code></a> option
@@ -2282,7 +2493,7 @@ elements.</p>
 </dd>
 
 <span id="opt-0"></span><dt id="opt--from0"><code>--from0</code>, <code>-0</code><a href="#opt--from0" class="tgt"></a></dt><dd>
-<p>This tells rsync that the rules/filenames it reads from a file are
+<p>This tells rsync that the rules or filenames it reads from a file are
 terminated by a null ('\0') character, not a NL, CR, or CR+LF.  This
 affects <a href="#opt--exclude-from"><code>--exclude-from</code></a>, <a href="#opt--include-from"><code>--include-from</code></a>,
 <a href="#opt--files-from"><code>--files-from</code></a>, and any merged files specified in a
@@ -2291,16 +2502,16 @@ all names read from a .cvsignore file are split on whitespace).</p>
 </dd>
 
 <dt id="opt--old-args"><code>--old-args</code><a href="#opt--old-args" class="tgt"></a></dt><dd>
-<p>This option tells rsync to stop trying to protect the arg values on the
+<p>This option tells rsync not to protect the argument values sent to the
 remote side from unintended word-splitting or other misinterpretation.
-It also allows the client to treat an empty arg as a &quot;.&quot; instead of
+It also allows the client to treat an empty argument as a &quot;.&quot; instead of
 generating an error.</p>
 <p>The default in a modern rsync is for &quot;shell-active&quot; characters (including
-spaces) to be backslash-escaped in the args that are sent to the remote
+spaces) to be backslash-escaped in the arguments that are sent to the remote
 shell.  The wildcard characters <code>*</code>, <code>?</code>, <code>[</code>, &amp; <code>]</code> are not escaped in
-filename args (allowing them to expand into multiple filenames) while being
-protected in option args, such as <a href="#opt--usermap"><code>--usermap</code></a>.</p>
-<p>If you have a script that wants to use old-style arg splitting in its
+filename arguments (allowing them to expand into multiple filenames) while being
+protected in option arguments, such as <a href="#opt--usermap"><code>--usermap</code></a>.</p>
+<p>If you have a script that wants to use old-style argument splitting in its
 filenames, specify this option once.  If the remote shell has a problem
 with any backslash escapes at all, specify this option twice.</p>
 <p>You may also control this setting via the <a href="#RSYNC_OLD_ARGS"><code>RSYNC_OLD_ARGS</code></a> environment
@@ -2309,31 +2520,31 @@ setting.  If it has the value &quot;2&quot; (or more), rsync will default to a
 repeated-option setting.  If it is &quot;0&quot;, you'll get the default escaping
 behavior.  The environment is always overridden by manually specified
 positive or negative options (the negative is <code>--no-old-args</code>).</p>
-<p>Note that this option also disables the extra safety check added in 3.2.5
+<p>Note that this option also disables the extra safety check
 that ensures that a remote sender isn't including extra top-level items in
 the file-list that you didn't request.  This side-effect is necessary
 because we can't know for sure what names to expect when the remote shell
-is interpreting the args.</p>
+is interpreting the arguments.</p>
 <p>This option conflicts with the <a href="#opt--secluded-args"><code>--secluded-args</code></a> option.</p>
 </dd>
 
 <span id="opt-s"></span><dt id="opt--secluded-args"><code>--secluded-args</code>, <code>-s</code><a href="#opt--secluded-args" class="tgt"></a></dt><dd>
 <p>This option sends all filenames and most options to the remote rsync via
-the protocol (not the remote shell command line) which avoids letting the
-remote shell modify them.  Wildcards are expanded on the remote host by
-rsync instead of a shell.</p>
-<p>This is similar to the default backslash-escaping of args that was added
-in 3.2.4 (see <a href="#opt--old-args"><code>--old-args</code></a>) in that it prevents things like space
-splitting and unwanted special-character side-effects. However, it has the
-drawbacks of being incompatible with older rsync versions (prior to 3.0.0)
-and of being refused by restricted shells that want to be able to inspect
-all the option values for safety.</p>
-<p>This option is useful for those times that you need the argument's
+the protocol (rather than via the remote shell command line), which avoids
+the possibility of the remote shell modifying them.
+Wildcards are expanded on the remote host by rsync instead of a shell.</p>
+<p>Without this option, rsync does backslash-escaping of arguments to prevent
+things like space splitting and unwanted special-character side-effects,
+which is normally sufficient to avoid unwanted modifications by the shell.
+This option is useful for those times that you need the argument's
 character set to be converted for the remote host, if the remote shell is
-incompatible with the default backslash-escpaing method, or there is some
+incompatible with the default backslash-escaping method, or there is some
 other reason that you want the majority of the options and arguments to
 bypass the command-line of the remote shell.</p>
-<p>If you combine this option with <a href="#opt--iconv"><code>--iconv</code></a>, the args related to the
+<p>This option is incompatible with remote rsync versions prior to 3.0.0
+(March 2008).  It also has the drawback of being refused by restricted
+shells that want to be able to inspect all the option values for safety.</p>
+<p>If you combine this option with <a href="#opt--iconv"><code>--iconv</code></a>, the arguments related to the
 remote side will be translated from the local to the remote character-set.
 The translation happens before wild-cards are expanded.  See also the
 <a href="#opt--files-from"><code>--files-from</code></a> option.</p>
@@ -2343,9 +2554,10 @@ enabled by default, otherwise it will be disabled by default.  Either state
 is overridden by a manually specified positive or negative version of this
 option (note that <code>--no-s</code> and <code>--no-secluded-args</code> are the negative
 versions).  This environment variable is also superseded by a non-zero
-<a href="#RSYNC_OLD_ARGS"><code>RSYNC_OLD_ARGS</code></a> export.</p>
+<a href="#RSYNC_OLD_ARGS"><code>RSYNC_OLD_ARGS</code></a> environment variable.</p>
 <p>This option conflicts with the <a href="#opt--old-args"><code>--old-args</code></a> option.</p>
-<p>This option used to be called <code>--protect-args</code> (before 3.2.6) and that
+<p>This option used to be called <code>--protect-args</code> (before 3.2.6, September
+2022) and that
 older name can still be used (though specifying it as <code>-s</code> is always the
 easiest and most compatible choice).</p>
 </dd>
@@ -2356,10 +2568,10 @@ performs on the file list generated by a remote sender.  This option should
 only be used if you trust the sender to not put something malicious in the
 file list (something that could possibly be done via a modified rsync, a
 modified shell, or some other similar manipulation).</p>
-<p>Normally, the rsync client (as of version 3.2.5) runs two extra validation
+<p>Normally, the rsync client runs two extra validation
 checks when pulling files from a remote rsync:</p>
 <ul>
-<li>It verifies that additional arg items didn't get added at the top of the
+<li>It verifies that additional argument items didn't get added at the top of the
 transfer.</li>
 <li>It verifies that none of the items in the file list are names that should
 have been excluded (if filter rules were specified).</li>
@@ -2370,18 +2582,18 @@ option interferes with the validation.  For instance:</p>
 <li>Using a per-directory filter file reads filter rules that only the server
 knows about, so the filter checking is disabled.</li>
 <li>Using the <a href="#opt--old-args"><code>--old-args</code></a> option allows the sender to manipulate the
-requested args, so the arg checking is disabled.</li>
+requested arguments, so the argument checking is disabled.</li>
 <li>Reading the files-from list from the server side means that the client
-doesn't know the arg list, so the arg checking is disabled.</li>
+doesn't know the argument list, so the argument checking is disabled.</li>
 <li>Using <a href="#opt--read-batch"><code>--read-batch</code></a> disables both checks since the batch file's
 contents will have been verified when it was created.</li>
 </ul>
 <p>This option may help an under-powered client server if the extra pattern
-matching is slowing things down on a huge transfer.  It can also be used to
-work around a currently-unknown bug in the verification logic for a transfer
-from a trusted sender.</p>
+matching is slowing things down on a huge transfer.  It could also be used
+for a transfer from a trusted sender as a workaround if there appeared to
+be a bug in the verification logic.</p>
 <p>When using this option it is a good idea to specify a dedicated destination
-directory, as discussed in the <a href="#MULTI-HOST_SECURITY">MULTI-HOST SECURITY</a> section.</p>
+directory, as discussed in the <a href="#SECURITY">SECURITY</a> section.</p>
 </dd>
 
 <dt id="opt--copy-as"><code>--copy-as=USER[:GROUP]</code><a href="#opt--copy-as" class="tgt"></a></dt><dd>
@@ -2389,8 +2601,9 @@ directory, as discussed in the <a href="#MULTI-HOST_SECURITY">MULTI-HOST SECURIT
 colon) the GROUP for the copy operations.  This only works if the user that
 is running rsync has the ability to change users.  If the group is not
 specified then the user's default groups are used.</p>
-<p>This option can help to reduce the risk of an rsync being run as root into
-or out of a directory that might have live changes happening to it and you
+<p>This option can help to reduce the risk in the case where rsync is being
+run as root, copying into or out of a directory that might have live
+changes happening to it, and you
 want to make sure that root-level read or write actions of system files are
 not possible.  While you could alternatively run all of rsync as the
 specified user, sometimes you need the root-level host-access credentials
@@ -2404,7 +2617,7 @@ provides a local-shell helper script that can be used to allow a
 &quot;localhost:&quot; or &quot;lh:&quot; host-spec to be specified without needing to setup
 any remote shells, allowing you to specify remote options that affect the
 side of the transfer that is using the host-spec (and using hostname &quot;lh&quot;
-avoids the overriding of the remote directory to the user's home dir).</p>
+avoids the overriding of the remote directory to the user's home directory).</p>
 <p>For example, the following rsync writes the local files as user &quot;joe&quot;:</p>
 <blockquote>
 <pre><code>sudo rsync -aiv --copy-as=joe host1:backups/joe/ /home/joe/
@@ -2414,8 +2627,8 @@ avoids the overriding of the remote directory to the user's home dir).</p>
 are available to that user, and makes it impossible for the joe user to do
 a timed exploit of the path to induce a change to a file that the joe user
 has no permissions to change.</p>
-<p>The following command does a local copy into the &quot;dest/&quot; dir as user &quot;joe&quot;
-(assuming you've installed support/lsh into a dir on your $PATH):</p>
+<p>The following command does a local copy into the &quot;dest/&quot; directory as user &quot;joe&quot;
+(assuming you've installed support/lsh into a directory on your $PATH):</p>
 <blockquote>
 <pre><code>sudo rsync -aive lsh -M--copy-as=joe src/ lh:dest/
 </code></pre>
@@ -2426,9 +2639,9 @@ has no permissions to change.</p>
 <p>This option instructs rsync to use DIR as a scratch directory when creating
 temporary copies of the files transferred on the receiving side.  The
 default behavior is to create each temporary file in the same directory as
-the associated destination file.  Beginning with rsync 3.1.1, the temp-file
-names inside the specified DIR will not be prefixed with an extra dot
-(though they will still have a random suffix added).</p>
+the associated destination file.  The temp-file
+names inside the specified DIR will not be prefixed with an extra dot,
+though they will still have a random suffix added.</p>
 <p>This option is most often used when the receiving disk partition does not
 have enough free space to hold a copy of the largest file in the transfer.
 In this case (i.e. when the scratch directory is on a different disk
@@ -2436,9 +2649,7 @@ partition), rsync will not be able to rename each received temporary file
 over the top of the associated destination file, but instead must copy it
 into place.  Rsync does this by copying the file over the top of the
 destination file, which means that the destination file will contain
-truncated data during this copy.  If this were not done this way (even if
-the destination file were first removed, the data locally copied to a
-temporary file in the destination directory, and then renamed into place)
+truncated data during this copy.  If this were not done this way,
 it would be possible for the old file to continue taking up disk space (if
 someone had it open), and thus there might not be enough room to fit the
 new version on the disk at the same time.</p>
@@ -2450,7 +2661,7 @@ don't have enough room to duplicate all the arriving files on the
 destination partition, another way to tell rsync that you aren't overly
 concerned about disk space is to use the <a href="#opt--partial-dir"><code>--partial-dir</code></a> option
 with a relative path; because this tells rsync that it is OK to stash off a
-copy of a single file in a subdir in the destination hierarchy, rsync will
+copy of a single file in a subdirectory in the destination hierarchy, rsync will
 use the partial-dir as a staging area to bring over the copied file, and
 then rename it into place from there. (Specifying a <a href="#opt--partial-dir"><code>--partial-dir</code></a>
 with an absolute path does not have this side-effect.)</p>
@@ -2458,7 +2669,7 @@ with an absolute path does not have this side-effect.)</p>
 
 <span id="opt-y"></span><dt id="opt--fuzzy"><code>--fuzzy</code>, <code>-y</code><a href="#opt--fuzzy" class="tgt"></a></dt><dd>
 <p>This option tells rsync that it should look for a basis file for any
-destination file that is missing.  The current algorithm looks in the same
+destination file that is missing.  With this option, rsync looks in the same
 directory as the destination file for either a file that has an identical
 size and modified-time, or a similarly-named file.  If found, rsync uses
 the fuzzy basis file to try to speed up the transfer.</p>
@@ -2479,7 +2690,7 @@ transferred to the destination directory.  This is useful for creating a
 sparse backup of just files that have changed from an earlier backup.  This
 option is typically used to copy into an empty (or newly created)
 directory.</p>
-<p>Beginning in version 2.6.4, multiple <code>--compare-dest</code> directories may be
+<p>Multiple <code>--compare-dest</code> directories may be
 provided, which will cause rsync to search the list in the order specified
 for an exact match.  If a match is found that differs only in attributes, a
 local copy is made and the attributes updated.  If a match is not found, a
@@ -2487,10 +2698,10 @@ basis file from one of the <u>DIRs</u> will be selected to try to speed up the
 transfer.</p>
 <p>If <u>DIR</u> is a relative path, it is relative to the destination directory.
 See also <a href="#opt--copy-dest"><code>--copy-dest</code></a> and <a href="#opt--link-dest"><code>--link-dest</code></a>.</p>
-<p>NOTE: beginning with version 3.1.0, rsync will remove a file from a
+<p>NOTE: rsync will remove a file from a
 non-empty destination hierarchy if an exact match is found in one of the
-compare-dest hierarchies (making the end result more closely match a fresh
-copy).</p>
+compare-dest hierarchies, making the end result more closely match a fresh
+copy.</p>
 </dd>
 
 <dt id="opt--copy-dest"><code>--copy-dest=DIR</code><a href="#opt--copy-dest" class="tgt"></a></dt><dd>
@@ -2521,16 +2732,30 @@ some attributes are getting forced outside of rsync's control, such a mount
 option that squishes root to a single user, or mounts a removable drive
 with generic ownership (such as OS X's &quot;Ignore ownership on this volume&quot;
 option).</p>
-<p>Beginning in version 2.6.4, multiple <code>--link-dest</code> directories may be
+<p>Multiple <code>--link-dest</code> directories may be
 provided, which will cause rsync to search the list in the order specified
 for an exact match (there is a limit of 20 such directories).  If a match
 is found that differs only in attributes, a local copy is made and the
 attributes updated.  If a match is not found, a basis file from one of the
 <u>DIRs</u> will be selected to try to speed up the transfer.</p>
+<p>Not every filesystem can hard-link a symlink, a device node, a FIFO or a
+socket, and the destination need not agree with the one rsync was built on&nbsp;-&#8288;-&#8288; macOS builds on APFS, which can, and may write to HFS+, which cannot.
+Where the destination refuses to link such an entry, it is copied instead
+and the transfer carries on, so only that entry loses the space saving.
+This applies to any refusal, because the error alone does not identify one:
+link(2) reports <code>EPERM</code> both for a filesystem without hard links and for an
+ordinary permission refusal.  Regular files have always behaved this way.</p>
+<p>One case is not covered.  With <a href="#opt--hard-links"><code>--hard-links</code></a> (<code>-H</code>), a group of
+such entries hard-linked to <u>each other</u> in the source needs a second link,
+from the first member to the rest, inside the destination itself.  Where
+that link is refused too&nbsp;-&#8288;-&#8288; a destination that cannot hard-link the type at
+all&nbsp;-&#8288;-&#8288; the members after the first are not created and the transfer fails.
+A <code>--link-dest</code> on another filesystem is fine: only the link to <u>DIR</u> is
+impossible there, and the ones within the destination still succeed.</p>
 <p>This option works best when copying into an empty destination hierarchy, as
 existing files may get their attributes tweaked, and that can affect
 alternate destination files via hard-links.  Also, itemizing of changes can
-get a bit muddled.  Note that prior to version 3.1.0, an
+get a bit muddled.  Note that prior to version 3.1.0 (September 2013), an
 alternate-directory exact match would never be found (nor linked into the
 destination) when a destination file already exists.</p>
 <p>Note that if you combine this option with <a href="#opt--ignore-times"><code>--ignore-times</code></a>, rsync will not
@@ -2539,11 +2764,11 @@ substitute for transferring the file, never as an additional check after
 the file is updated.</p>
 <p>If <u>DIR</u> is a relative path, it is relative to the destination directory.
 See also <a href="#opt--compare-dest"><code>--compare-dest</code></a> and <a href="#opt--copy-dest"><code>--copy-dest</code></a>.</p>
-<p>Note that rsync versions prior to 2.6.1 had a bug that could prevent
+<p>Note that rsync versions prior to 2.6.1 (April 2004) had a bug that could prevent
 <code>--link-dest</code> from working properly for a non-super-user when
 <a href="#opt--owner"><code>--owner</code></a> (<code>-o</code>) was specified (or implied).  You can work-around
-this bug by avoiding the <code>-o</code> option (or using <code>--no-o</code>) when sending to an
-old rsync.</p>
+this bug by avoiding the <code>-o</code> option (or using <code>--no-o</code>) when sending to a
+really old remote rsync.</p>
 </dd>
 
 <span id="opt-z"></span><dt id="opt--compress"><code>--compress</code>, <code>-z</code><a href="#opt--compress" class="tgt"></a></dt><dd>
@@ -2555,9 +2780,11 @@ unless you force the choice using the <a href="#opt--compress-choice"><code>--co
 option.</p>
 <p>Run <code>rsync --version</code> to see the default compress list compiled into your
 version.</p>
-<p>When both sides of the transfer are at least 3.2.0, rsync chooses the first
-algorithm in the client's list of choices that is also in the server's list
-of choices.  If no common compress choice is found, rsync exits with
+<p>When both sides of the transfer are at least 3.2.0 (June 2020),
+each side chooses its own
+most-preferred algorithm that also appears in the peer's list.  Both sides
+order their lists strongest-first, so they converge on the strongest mutual
+choice.  If no common compress choice is found, rsync exits with
 an error.  If the remote rsync is too old to support checksum negotiation,
 its list is assumed to be &quot;zlib&quot;.</p>
 <p>The default order can be customized by setting the environment variable
@@ -2602,7 +2829,7 @@ more compatible with an external zlib implementation).</p>
 
 <span id="opt--zl"></span><dt id="opt--compress-level"><code>--compress-level=NUM</code>, <code>--zl=NUM</code><a href="#opt--compress-level" class="tgt"></a></dt><dd>
 <p>Explicitly set the compression level to use (see <a href="#opt--compress"><code>--compress</code></a>,
-<code>-z</code>) instead of letting it default.  The <a href="#opt--compress"><code>--compress</code></a> option is
+<code>-z</code>) instead of using the default.  The <a href="#opt--compress"><code>--compress</code></a> option is
 implied as long as the level chosen is not a &quot;don't compress&quot; level for the
 compression algorithm that is in effect (e.g. zlib compression treats level
 0 as &quot;off&quot;).</p>
@@ -2631,11 +2858,25 @@ report something like &quot;<code>Client compress: zstd (level 3)</code>&quot; (
 checksum choice in effect).</p>
 </dd>
 
+<span id="opt--zt"></span><dt id="opt--compress-threads"><code>--compress-threads=NUM</code>, <code>--zt=NUM</code><a href="#opt--compress-threads" class="tgt"></a></dt><dd>
+<p>Set the number of threads to spawn when compressing data. Setting this
+option to 1 or more will instruct the compression library to spawn 1 or
+more threads for compression. Ideally, increasing the number of threads
+will increase transfer speed if the transfer is CPU bound on the sender.</p>
+<p>This option does not affect decompression.</p>
+<p>Compression algorithms that allow threading:</p>
+<ul>
+<li><code>zstd</code> (only when libzstd is compiled with threading support)</li>
+</ul>
+<p>This option is ignored if one of the above alogithms is not selected as the
+<code>--compression-choice</code> or if compression not enabled.</p>
+</dd>
+
 <dt id="opt--skip-compress"><code>--skip-compress=LIST</code><a href="#opt--skip-compress" class="tgt"></a></dt><dd>
 <p><strong>NOTE:</strong> no compression method currently supports per-file compression
 changes, so this option has no effect.</p>
 <p>Override the list of file suffixes that will be compressed as little as
-possible.  Rsync sets the compression level on a per-file basis based on
+possible.  Rsync can set the compression level on a per-file basis based on
 the file's suffix.  If the compression algorithm has an &quot;off&quot; level, then
 no compression occurs for those files.  Other algorithms that support
 changing the streaming level on-the-fly will have the level minimized to
@@ -2804,6 +3045,9 @@ via a &quot;<code>*</code>&quot; or using an empty name.  For instance:</p>
 <pre><code>--usermap=:nobody --groupmap=*:nobody
 </code></pre>
 </blockquote>
+<p>An empty <strong>FROM</strong> value matches only sender-side IDs that have no name.  It
+is not a wildcard for named users or groups; use &quot;<code>*</code>&quot; when you want to map
+every sender-side name.</p>
 <p>When the <a href="#opt--numeric-ids"><code>--numeric-ids</code></a> option is used, the sender does not send any
 names, so all the IDs are treated as having an empty name.  This means that
 you will need to specify numeric <strong>FROM</strong> values if you want to map these
@@ -2812,8 +3056,8 @@ nameless IDs to different values.</p>
 a super-user (see also the <a href="#opt--super"><code>--super</code></a> and <a href="#opt--fake-super"><code>--fake-super</code></a>
 options).  For the <code>--groupmap</code> option to work, the receiver will need to
 have permissions to set that group.</p>
-<p>Starting with rsync 3.2.4, the <code>--usermap</code> option implies the
-<a href="#opt--owner"><code>--owner</code></a> (<code>-o</code>) option while the <code>--groupmap</code> option implies the
+<p>The <code>--usermap</code> option implies the
+<a href="#opt--owner"><code>--owner</code></a> (<code>-o</code>) option, and the <code>--groupmap</code> option implies the
 <a href="#opt--group"><code>--group</code></a> (<code>-g</code>) option (since rsync needs to have those options
 enabled for the mapping options to work).</p>
 <p>An older rsync client may need to use <a href="#opt-s"><code>-s</code></a> to avoid a complaint
@@ -2823,7 +3067,7 @@ about wildcard characters, but a modern rsync handles this automatically.</p>
 <dt id="opt--chown"><code>--chown=USER:GROUP</code><a href="#opt--chown" class="tgt"></a></dt><dd>
 <p>This option forces all files to be owned by USER with group GROUP.  This is
 a simpler interface than using <a href="#opt--usermap"><code>--usermap</code></a> &amp; <a href="#opt--groupmap"><code>--groupmap</code></a>
-directly, but it is implemented using those options internally so they
+directly, but it is implemented using those options internally, thus they
 cannot be mixed.  If either the USER or GROUP is empty, no mapping for the
 omitted user/group will occur.  If GROUP is empty, the trailing colon may
 be omitted, but if USER is empty, a leading colon must be supplied.</p>
@@ -2891,8 +3135,8 @@ when rsync's output is going to a file or pipe.</p>
 file, including attribute changes.  This is exactly the same as specifying
 <a href="#opt--out-format"><code>--out-format='%i %n%L'</code></a>.  If you repeat the option, unchanged
 files will also be output, but only if the receiving rsync is at least
-version 2.6.7 (you can use <code>-vv</code> with older versions of rsync, but that
-also turns on the output of other verbose messages).</p>
+version 2.6.7 (March 2006). You can use <code>-vv</code> with older versions of rsync,
+but that also turns on the output of other verbose messages.</p>
 <p>The &quot;%i&quot; escape has a cryptic output that is 11 letters long.  The general
 format is like the string <code>YXcstpoguax</code>, where <strong>Y</strong> is replaced by the type
 of update being done, <strong>X</strong> is replaced by the file-type, and the other
@@ -2928,7 +3172,7 @@ have changed, as follows:</p>
 <li>A <code>c</code> means either that a regular file has a different checksum (requires
 <a href="#opt--checksum"><code>--checksum</code></a>) or that a symlink, device, or special file has a
 changed value.  Note that if you are sending files to an rsync prior to
-3.0.1, this change flag will be present only for checksum-differing
+3.0.1 (April 2008), this change flag will be present only for checksum-differing
 regular files.</li>
 <li>A <code>s</code> means the size of a regular file is different and will be updated
 by the file transfer.</li>
@@ -2937,9 +3181,7 @@ the sender's value (requires <a href="#opt--times"><code>--times</code></a>).  A
 <code>T</code> means that the modification time will be set to the transfer time,
 which happens when a file/symlink/device is updated without
 <a href="#opt--times"><code>--times</code></a> and when a symlink is changed and the receiver can't
-set its time. (Note: when using an rsync 3.0.0 client, you might see the
-<code>s</code> flag combined with <code>t</code> instead of the proper <code>T</code> flag for this
-time-setting failure.)</li>
+set its time.</li>
 <li>A <code>p</code> means the permissions are different and are being updated to the
 sender's value (requires <a href="#opt--perms"><code>--perms</code></a>).</li>
 <li>An <code>o</code> means the owner is different and is being updated to the sender's
@@ -2955,8 +3197,8 @@ to the sender's value (requires <a href="#opt--crtimes"><code>--crtimes</code></
 <li><code>b</code> means that both the access and create times are being updated</li>
 </ul>
 </li>
-<li>The <code>a</code> means that the ACL information is being changed.</li>
-<li>The <code>x</code> means that the extended attribute information is being changed.</li>
+<li>An <code>a</code> means that the ACL information is being changed.</li>
+<li>An <code>x</code> means that the extended attribute information is being changed.</li>
 </ul>
 <p>One other output is possible: when deleting files, the &quot;%i&quot; will output the
 string &quot;<code>*deleting</code>&quot; for each item that is being removed (assuming that you
@@ -2973,7 +3215,7 @@ character.  A default format of &quot;%n%L&quot; is assumed if either
 name of the file and, if the item is a link, where it points).  For a full
 list of the possible escape characters, see the <a href="rsyncd.conf.5#log_format"><code>log format</code></a> setting in the rsyncd.conf manpage.</p>
 <p>Specifying the <code>--out-format</code> option implies the <a href="#opt--info"><code>--info=name</code></a>
-option, which will mention each file, dir, etc. that gets updated in a
+option, which will mention each file, directory, etc. that gets updated in a
 significant way (a transferred file, a recreated symlink/device, or a
 touched directory).  In addition, if the itemize-changes escape (%i) is
 included in the string (e.g. if the <a href="#opt--itemize-changes"><code>--itemize-changes</code></a> option was
@@ -2989,7 +3231,7 @@ information (followed, of course, by the out-format output).</p>
 </dd>
 
 <dt id="opt--log-file"><code>--log-file=FILE</code><a href="#opt--log-file" class="tgt"></a></dt><dd>
-<p>This option causes rsync to log what it is doing to a file.  This is
+<p>This option causes rsync to write the log of what it is doing to a file.  This is
 similar to the logging that a daemon does, but can be requested for the
 client side and/or the server side of a non-daemon transfer.  If specified
 as a client option, transfer logging will be enabled with a default format
@@ -3032,7 +3274,7 @@ which includes directories, symlinks, etc.  The total count will be
 followed by a list of counts by filetype (if the total is non-zero).  For
 example: &quot;(reg: 5, dir: 3, link: 2, dev: 1, special: 1)&quot; lists the totals
 for regular files, directories, symlinks, devices, and special files.  If
-any of value is 0, it is completely omitted from the list.</li>
+any value is 0, it is completely omitted from the list.</li>
 <li><code>Number of created files</code> is the count of how many &quot;files&quot; (generic
 sense) were created (as opposed to updated).  The total count will be
 followed by a list of counts by filetype (if the total is non-zero).</li>
@@ -3040,17 +3282,17 @@ followed by a list of counts by filetype (if the total is non-zero).</li>
 sense) were deleted.  The total count will be
 followed by a list of counts by filetype (if the total is non-zero).
 Note that this line is only output if deletions are in effect, and only
-if protocol 31 is being used (the default for rsync 3.1.x).</li>
+if the negotiated protocol is at least 31 (the default when both sides
+are 3.1.0, September 2013, or newer).</li>
 <li><code>Number of regular files transferred</code> is the count of normal files that
 were updated via rsync's delta-transfer algorithm, which does not include
-dirs, symlinks, etc.  Note that rsync 3.1.0 added the word &quot;regular&quot; into
-this heading.</li>
+directories, symlinks, etc.</li>
 <li><code>Total file size</code> is the total sum of all file sizes in the transfer.
 This does not count any size for directories or special files, but does
 include the size of symlinks.</li>
 <li><code>Total transferred file size</code> is the total sum of all files sizes for
 just the transferred files.</li>
-<li><code>Literal data</code> is how much unmatched file-update data we had to send to
+<li><code>Literal data</code> is how much unmatched file-update data the sender had to send to
 the receiver for it to recreate the updated files.</li>
 <li><code>Matched data</code> is how much data the receiver got locally when recreating
 the updated files.</li>
@@ -3074,10 +3316,11 @@ sent to us, which makes the stats more consistent.</li>
 
 <span id="opt-8"></span><dt id="opt--8-bit-output"><code>--8-bit-output</code>, <code>-8</code><a href="#opt--8-bit-output" class="tgt"></a></dt><dd>
 <p>This tells rsync to leave all high-bit characters unescaped in the output
+(to standard output or standard error)
 instead of trying to test them to see if they're valid in the current
 locale and escaping the invalid ones.  All control characters (but never
 tabs) are always escaped, regardless of this option's setting.</p>
-<p>The escape idiom that started in 2.6.7 is to output a literal backslash
+<p>The escape idiom that started in 2.6.7 (March 2006) is to output a literal backslash
 (<code>\</code>) and a hash (<code>#</code>), followed by exactly 3 octal digits.  For example, a
 newline would output as &quot;<code>\#012</code>&quot;.  A literal backslash that is in a
 filename is not escaped unless it is followed by a hash and 3 digits (0-9).</p>
@@ -3100,7 +3343,7 @@ digits) by specifying the <code>--no-human-readable</code> (<code>--no-h</code>)
 (mega), <code>G</code> (giga), <code>T</code> (tera), or <code>P</code> (peta).  For example, a 1234567-byte
 file would output as 1.23M in level-2 (assuming that a period is your local
 decimal point).</p>
-<p>Backward compatibility note: versions of rsync prior to 3.1.0 do not
+<p>Backward compatibility note: versions of rsync prior to 3.1.0 (September 2013) do not
 support human-readable level 1, and they default to level 0.  Thus,
 specifying one or two <code>-h</code> options will behave in a comparable manner in
 old and new versions as long as you didn't specify a <code>--no-h</code> option prior
@@ -3121,13 +3364,13 @@ rest of the file much faster.</p>
 also implying that it be enabled.  This enhanced partial-file method puts
 any partially transferred files into the specified <u>DIR</u> instead of writing
 the partial file out to the destination file.  On the next transfer, rsync
-will use a file found in this dir as data to speed up the resumption of the
+will use a file found in this directory as data to speed up the resumption of the
 transfer and then delete it after it has served its purpose.</p>
 <p>Note that if <a href="#opt--whole-file"><code>--whole-file</code></a> is specified (or implied), any
 partial-dir files that are found for a file that is being updated will
 simply be removed (since rsync is sending files without using rsync's
 delta-transfer algorithm).</p>
-<p>Rsync will create the <u>DIR</u> if it is missing, but just the last dir&nbsp;-&#8288;-&#8288; not
+<p>Rsync will create the <u>DIR</u> if it is missing, but just the last directory&nbsp;-&#8288;-&#8288; not
 the whole path.  This makes it easy to use a relative path (such as
 &quot;<code>--partial-dir=.rsync-partial</code>&quot;) to have rsync create the
 partial-directory in the destination file's directory when it is needed,
@@ -3148,13 +3391,13 @@ exclude/hide/protect rule for the partial-dir because:</p>
 <li>the auto-added rule may be ineffective at the end of your other rules, or</li>
 <li>you may wish to override rsync's exclude choice.</li>
 </ol>
-<p>For instance, if you want to make rsync clean-up any left-over partial-dirs
+<p>For instance, if you want to make rsync clean-up any left-over partial-directories
 that may be lying around, you should specify <a href="#opt--delete-after"><code>--delete-after</code></a> and
 add a &quot;risk&quot; filter rule, e.g.  <code>-f 'R .rsync-partial/'</code>. Avoid using
 <a href="#opt--delete-before"><code>--delete-before</code></a> or <a href="#opt--delete-during"><code>--delete-during</code></a> unless you don't
 need rsync to use any of the left-over partial-dir data during the current
 run.</p>
-<p>IMPORTANT: the <code>--partial-dir</code> should not be writable by other users or it
+<p>IMPORTANT: the partial-dir directory should not be writable by other users or it
 is a security risk!  E.g. AVOID &quot;/tmp&quot;!</p>
 <p>You can also set the partial-dir value the <a href="#RSYNC_PARTIAL_DIR"><code>RSYNC_PARTIAL_DIR</code></a>
 environment variable.  Setting this in the environment does not force
@@ -3174,7 +3417,7 @@ conflicts with <code>--partial-dir</code>), and</li>
 partial file is now updated in-place instead of creating yet another
 tmp-file copy (so it maxes out at dest + tmp instead of dest + partial +
 tmp).  This requires both ends of the transfer to be at least version
-3.2.0.</p>
+3.2.0 (June 2020).</p>
 <p>For the purposes of the daemon-config's &quot;<code>refuse options</code>&quot; setting,
 <code>--partial-dir</code> does <u>not</u> imply <a href="#opt--partial"><code>--partial</code></a>.  This is so that a
 refusal of the <a href="#opt--partial"><code>--partial</code></a> option can be used to disallow the
@@ -3186,12 +3429,12 @@ allowing the safer idiom provided by <code>--partial-dir</code>.</p>
 <p>This option puts the temporary file from each updated file into a holding
 directory until the end of the transfer, at which time all the files are
 renamed into place in rapid succession.  This attempts to make the updating
-of the files a little more atomic.  By default the files are placed into a
+of the files a little closer to atomic.  By default the files are placed into a
 directory named <code>.~tmp~</code> in each file's destination directory, but if
 you've specified the <a href="#opt--partial-dir"><code>--partial-dir</code></a> option, that directory will be
 used instead.  See the comments in the <a href="#opt--partial-dir"><code>--partial-dir</code></a> section for
 a discussion of how this <code>.~tmp~</code> dir will be excluded from the transfer,
-and what you can do if you want rsync to cleanup old <code>.~tmp~</code> dirs that
+and what you can do if you want rsync to cleanup old <code>.~tmp~</code> directories that
 might be lying around.  Conflicts with <a href="#opt--inplace"><code>--inplace</code></a> and
 <a href="#opt--append"><code>--append</code></a>.</p>
 <p>This option implies <a href="#opt--no-inc-recursive"><code>--no-inc-recursive</code></a> since it needs the full
@@ -3207,8 +3450,8 @@ the path is absolute), and</li>
 <li>there are no mount points in the hierarchy (since the delayed updates
 will fail if they can't be renamed into place).</li>
 </ol>
-<p>See also the &quot;atomic-rsync&quot; python script in the &quot;support&quot; subdir for an
-update algorithm that is even more atomic (it uses <a href="#opt--link-dest"><code>--link-dest</code></a>
+<p>See also the &quot;atomic-rsync&quot; python script in the &quot;support&quot; subdirectory for an
+update algorithm that is even closer to atomic (it uses <a href="#opt--link-dest"><code>--link-dest</code></a>
 and a parallel hierarchy of files).</p>
 </dd>
 
@@ -3312,7 +3555,7 @@ handled when the signal arrives).  A filename is output (if needed)
 followed by the <a href="#opt--info"><code>--info=progress2</code></a> format of progress info.  If you
 don't know which of the 3 rsync processes is the client process, it's OK to
 signal all of them (since the non-client processes ignore the signal).</p>
-<p>CAUTION: sending SIGVTALRM to an older rsync (pre-3.2.0) will kill it.</p>
+<p>CAUTION: sending SIGVTALRM to an older rsync (pre-3.2.0, June 2020) will kill it.</p>
 </dd>
 
 <dt id="opt--password-file"><code>--password-file=FILE</code><a href="#opt--password-file" class="tgt"></a></dt><dd>
@@ -3334,22 +3577,22 @@ config file).</p>
 script on its stdin.  One possible use of this data is to give the script a
 secret that can be used to mount an encrypted filesystem (which you should
 unmount in the the &quot;post-xfer exec&quot; script).</p>
-<p>The daemon must be at least version 3.2.1.</p>
+<p>The daemon must be at least version 3.2.1 (June 2020).</p>
 </dd>
 
 <dt id="opt--list-only"><code>--list-only</code><a href="#opt--list-only" class="tgt"></a></dt><dd>
 <p>This option will cause the source files to be listed instead of
-transferred.  This option is inferred if there is a single source arg and
+transferred.  This option is inferred if there is a single source argument and
 no destination specified, so its main uses are:</p>
 <ol>
-<li>to turn a copy command that includes a destination arg into a
+<li>to turn a copy command that includes a destination argument into a
 file-listing command, or</li>
-<li>to be able to specify more than one source arg.  Note: be sure to
+<li>to be able to specify more than one source argument.  Note: be sure to
 include the destination.</li>
 </ol>
-<p>CAUTION: keep in mind that a source arg with a wild-card is expanded by the
-shell into multiple args, so it is never safe to try to specify a single
-wild-card arg to try to infer this option. A safe example is:</p>
+<p>CAUTION: keep in mind that a source argument with a wild-card is expanded by the
+shell into multiple arguments, so it is never safe to try to specify a single
+wild-card argument to try to infer this option. A safe example is:</p>
 <blockquote>
 <pre><code>rsync -av --list-only foo* dest/
 </code></pre>
@@ -3360,16 +3603,17 @@ wild-card arg to try to infer this option. A safe example is:</p>
 -rw-rw-r--             80 2005/01/11 10:37:37 support/Makefile
 </code></pre>
 </blockquote>
-<p>The only option that affects this output style is (as of 3.1.0) the
+<p>The only option that affects this output style is the
 <a href="#opt--human-readable"><code>--human-readable</code></a> (<code>-h</code>) option.  The default is to output sizes
 as byte counts with digit separators (in a 14-character-width column).
 Specifying at least one <code>-h</code> option makes the sizes output with unit
 suffixes.  If you want old-style bytecount sizes without digit separators
 (and an 11-character-width column) use <code>--no-h</code>.</p>
 <p>Compatibility note: when requesting a remote listing of files from an rsync
-that is version 2.6.3 or older, you may encounter an error if you ask for a
+that is version 2.6.3 or older (i.e., pre-2005),
+you may encounter an error if you ask for a
 non-recursive listing.  This is because a file listing implies the
-<a href="#opt--dirs"><code>--dirs</code></a> option w/o <a href="#opt--recursive"><code>--recursive</code></a>, and older rsyncs don't
+<a href="#opt--dirs"><code>--dirs</code></a> option without <a href="#opt--recursive"><code>--recursive</code></a>, and older rsyncs don't
 have that option.  To avoid this problem, either specify the <code>--no-dirs</code>
 option (if you don't need to expand a directory's content), or turn on
 recursion and exclude the content of subdirectories: <code>-r --exclude='/*/*'</code>.</p>
@@ -3445,9 +3689,9 @@ files.</p>
 with <a href="#opt--read-batch"><code>--read-batch</code></a>.  See the &quot;BATCH MODE&quot; section for details, and
 also the <a href="#opt--only-write-batch"><code>--only-write-batch</code></a> option.</p>
 <p>This option overrides the negotiated checksum &amp; compress lists and always
-negotiates a choice based on old-school md5/md4/zlib choices.  If you want
-a more modern choice, use the <a href="#opt--checksum-choice"><code>--checksum-choice</code></a> (<code>--cc</code>) and/or
-<a href="#opt--compress-choice"><code>--compress-choice</code></a> (<code>--zc</code>) options.</p>
+negotiates a choice based on old-school md5/md4/zlib choices.  This means
+batch mode is not compatible with newer compression choices such as zstd or
+lz4.</p>
 </dd>
 
 <dt id="opt--only-write-batch"><code>--only-write-batch=FILE</code><a href="#opt--only-write-batch" class="tgt"></a></dt><dd>
@@ -3528,7 +3772,7 @@ is the case.</p>
 <dt id="opt--checksum-seed"><code>--checksum-seed=NUM</code><a href="#opt--checksum-seed" class="tgt"></a></dt><dd>
 <p>Set the checksum seed to the integer NUM.  This 4 byte checksum seed is
 included in each block and MD4 file checksum calculation (the more modern
-MD5 file checksums don't use a seed).  By default the checksum seed is
+file checksums don't use a seed).  By default the checksum seed is
 generated by the server and defaults to the current <strong>time</strong>().  This
 option is used to set a specific checksum seed, which is useful for
 applications that want repeatable block checksums, or in the case where the
@@ -3671,9 +3915,9 @@ different ways.</p>
 are transferred, ignoring any deletion side-effects.  Filter rules mainly
 affect the contents of directories that rsync is &quot;recursing&quot; into, but they can
 also affect a top-level item in the transfer that was specified as a argument.</p>
-<p>The default for any unmatched file/dir is for it to be included in the
-transfer, which puts the file/dir into the sender's file list.  The use of an
-exclude rule causes one or more matching files/dirs to be left out of the
+<p>The default for any unmatched file/directory is for it to be included in the
+transfer, which puts the file/directory into the sender's file list.  The use of an
+exclude rule causes one or more matching files/directories to be left out of the
 sender's file list.  An include rule can be used to limit the effect of an
 exclude rule that is matching too many files.</p>
 <p>The order of the rules is important because the first rule that matches is the
@@ -3732,7 +3976,7 @@ option (though the 2 commands behave differently if deletions are enabled):</p>
 </blockquote>
 <p>The following command does not need an include of the &quot;x&quot; directory because it
 is not a part of the transfer (note the trailing slash).  Running this command
-would copy just &quot;<code>/tmp/x/file.txt</code>&quot; because the &quot;y&quot; and &quot;z&quot; dirs get excluded:</p>
+would copy just &quot;<code>/tmp/x/file.txt</code>&quot; because the &quot;y&quot; and &quot;z&quot; directories get excluded:</p>
 <blockquote>
 <pre><code>rsync -ai -f'+ file.txt' -f'- *' x/ host:/tmp/x/
 </code></pre>
@@ -3812,7 +4056,7 @@ Equivalent to a receiver-only exclude, so <code>-f'P foo'</code> could also be
 specified as <code>-f'-r foo'</code>.</dd>
 <dt><code>risk, 'R'</code></dt><dd> files that match the pattern are not protected. Equivalent to a
 receiver-only include, so <code>-f'R foo'</code> could also be specified as <code>-f'+r foo'</code>.</dd>
-<dt><code>clear, '!'</code></dt><dd> clears the current include/exclude list (takes no arg)</dd>
+<dt><code>clear, '!'</code></dt><dd> clears the current include/exclude list (takes no argument)</dd>
 </dl>
 <p>When rules are being read from a file (using merge or dir-merge), empty lines
 are ignored, as are whole-line comments that start with a '<code>#</code>' (filename rules
@@ -3873,9 +4117,9 @@ be changed to &quot;<code>foo\\bar*</code>&quot; to avoid the &quot;<code>\b</co
 <li>Option <code>-f'- /foo'</code> would exclude a file (or directory) named foo in the
 transfer-root directory</li>
 <li>Option <code>-f'- foo/'</code> would exclude any directory named foo</li>
-<li>Option <code>-f'- foo/*/bar'</code> would exclude any file/dir named bar which is at two
+<li>Option <code>-f'- foo/*/bar'</code> would exclude any file/directory named bar which is at two
 levels below a directory named foo (if foo is in the transfer)</li>
-<li>Option <code>-f'- /foo/**/bar'</code> would exclude any file/dir named bar that was two
+<li>Option <code>-f'- /foo/**/bar'</code> would exclude any file/directory named bar that was two
 or more levels below a top-level directory named foo (note that /foo/bar is
 <strong>not</strong> excluded by this)</li>
 <li>Options <code>-f'+ */' -f'+ *.c' -f'- *'</code> would include all directories and .c
@@ -3891,12 +4135,12 @@ would be excluded by the &quot;<code>- *</code>&quot;)</li>
 absolute pathname of the current item.  For example, <code>-f'-/ /etc/passwd'</code>
 would exclude the passwd file any time the transfer was sending files from
 the &quot;/etc&quot; directory, and &quot;-&#8288;/ subdir/foo&quot; would always exclude &quot;foo&quot; when it
-is in a dir named &quot;subdir&quot;, even if &quot;foo&quot; is at the root of the current
+is in a directory named &quot;subdir&quot;, even if &quot;foo&quot; is at the root of the current
 transfer.</li>
 <li>A <code>!</code> specifies that the include/exclude should take effect if the pattern
 fails to match.  For instance, <code>-f'-! */'</code> would exclude all non-directories.</li>
 <li>A <code>C</code> is used to indicate that all the global CVS-exclude rules should be
-inserted as excludes in place of the &quot;-&#8288;C&quot;.  No arg should follow.</li>
+inserted as excludes in place of the &quot;-&#8288;C&quot;.  No argument should follow.</li>
 <li>An <code>s</code> is used to indicate that the rule applies to the sending side.  When a
 rule affects the sending side, it affects what files are put into the
 sender's file list.  The default is for a rule to affect both sides unless
@@ -3914,7 +4158,7 @@ like &quot;CVS&quot; and &quot;<code>*.o</code>&quot; are marked as perishable, 
 directory that was removed on the source from being deleted on the
 destination.</li>
 <li>An <code>x</code> indicates that a rule affects xattr names in xattr copy/delete
-operations (and is thus ignored when matching file/dir names).  If no
+operations (and is thus ignored when matching file/directory names).  If no
 xattr-matching rules are specified, a default xattr filtering rule is used
 (see the <a href="#opt--xattrs"><code>--xattrs</code></a> option).</li>
 </ul>
@@ -3998,7 +4242,7 @@ file.  All rules read in prior to the start of the directory scan follow the
 global anchoring rules (i.e. a leading slash matches at the root of the
 transfer).</p>
 <p>If a per-directory merge-file is specified with a path that is a parent
-directory of the first transfer directory, rsync will scan all the parent dirs
+directory of the first transfer directory, rsync will scan all the parent directories
 from that starting point to the transfer directory for the indicated
 per-directory file.  For instance, here is a common filter (see <a href="#opt-F"><code>-F</code></a>):</p>
 <blockquote>
@@ -4019,7 +4263,7 @@ rsync -av --filter=': .rsync-filter' /src/path/ /dest/dir
 </blockquote>
 <p>The first two commands above will look for &quot;.rsync-filter&quot; in &quot;/&quot; and &quot;/src&quot;
 before the normal scan begins looking for the file in &quot;/src/path&quot; and its
-subdirectories.  The last command avoids the parent-dir scan and only looks for
+subdirectories.  The last command avoids the parent-directory scan and only looks for
 the &quot;.rsync-filter&quot; files in each directory that is a part of the transfer.</p>
 <p>If you want to include the contents of a &quot;.cvsignore&quot; in your patterns, you
 should use the rule &quot;:C&quot;, which creates a dir-merge of the .cvsignore file, but
@@ -4040,7 +4284,7 @@ rsync -avC --include=foo.o -f :C --exclude='*.old' a/ b
 </blockquote>
 <p>Both of the above rsync commands are identical.  Each one will merge all the
 per-directory .cvsignore rules in the middle of the list rather than at the
-end.  This allows their dir-specific rules to supersede the rules that follow
+end.  This allows their directory-specific rules to supersede the rules that follow
 the :C instead of being subservient to all your rules.  To affect the other CVS
 exclude rules (i.e. the default list of exclusions, the contents of
 $HOME/.cvsignore, and the value of $CVSIGNORE) you should omit the <code>-C</code>
@@ -4194,7 +4438,7 @@ destination tree.  Rsync updates the destination tree using the information
 stored in the batch file.</p>
 <p>For your convenience, a script file is also created when the write-batch option
 is used: it will be named the same as the batch file with &quot;.sh&quot; appended.  This
-script file contains a command-line suitable for updating a destination tree
+script file contains a command line suitable for updating a destination tree
 using the associated batch file.  It can be executed using a Bourne (or
 Bourne-like) shell, optionally passing in an alternate destination tree
 pathname which is then used instead of the original destination path.  This is
@@ -4248,8 +4492,8 @@ used to generate the batch file.  Rsync will die with an error if the protocol
 version in the batch file is too new for the batch-reading rsync to handle.
 See also the <a href="#opt--protocol"><code>--protocol</code></a> option for a way to have the creating rsync
 generate a batch file that an older rsync can understand.  (Note that batch
-files changed format in version 2.6.3, so mixing versions older than that with
-newer versions will not work.)</p>
+files changed format in version 2.6.3 (September 2004), so mixing versions
+older than that with newer versions will not work.)</p>
 <p>When reading a batch file, rsync will force the value of certain options to
 match the data in the batch file if you didn't set them to the same as the
 batch-writing command.  Other options can (and should) be changed.  For
@@ -4263,8 +4507,6 @@ script file.  An advanced user can use this to modify the exclude list if a
 change in what gets deleted by <a href="#opt--delete"><code>--delete</code></a> is desired.  A normal user
 can ignore this detail and just use the shell script as an easy way to run the
 appropriate <a href="#opt--read-batch"><code>--read-batch</code></a> command for the batched data.</p>
-<p>The original batch mode in rsync was based on &quot;rsync+&quot;, but the latest
-version uses a new implementation.</p>
 <h2 id="SYMBOLIC_LINKS">SYMBOLIC LINKS<a href="#SYMBOLIC_LINKS" class="tgt"></a></h2>
 <p>Three basic behaviors are possible when rsync encounters a symbolic
 link in the source directory.</p>
@@ -4305,7 +4547,7 @@ unsafe symlinks found in the transfer and creates the safe ones.</dd>
 </dl>
 <p>For the effect of <a href="#opt--munge-links"><code>--munge-links</code></a>, see the discussion in that option's
 section.</p>
-<p>Note that the <a href="#opt--keep-dirlinks"><code>--keep-dirlinks</code></a> option does not effect symlinks in the
+<p>Note that the <a href="#opt--keep-dirlinks"><code>--keep-dirlinks</code></a> option does not affect symlinks in the
 transfer but instead affects how rsync treats a symlink to a directory that
 already exists on the receiving side.  See that option's section for a warning.</p>
 <h2 id="DIAGNOSTICS">DIAGNOSTICS<a href="#DIAGNOSTICS" class="tgt"></a></h2>
@@ -4333,7 +4575,7 @@ file is included or excluded.</p>
 <li><strong>0</strong> -&#8288; Success</li>
 <li><strong>1</strong> -&#8288; Syntax or usage error</li>
 <li><strong>2</strong> -&#8288; Protocol incompatibility</li>
-<li><strong>3</strong> -&#8288; Errors selecting input/output files, dirs</li>
+<li><strong>3</strong> -&#8288; Errors selecting input/output files, directories</li>
 <li><strong>4</strong> -&#8288; Requested action not supported. Either:
 <ul>
 <li>an attempt was made to manipulate 64-bit files on a platform that cannot support them</li>
@@ -4341,18 +4583,20 @@ file is included or excluded.</p>
 </ul>
 </li>
 <li><strong>5</strong> -&#8288; Error starting client-server protocol</li>
-<li><strong>6</strong> -&#8288; Daemon unable to append to log-file</li>
 <li><strong>10</strong> -&#8288; Error in socket I/O</li>
 <li><strong>11</strong> -&#8288; Error in file I/O</li>
 <li><strong>12</strong> -&#8288; Error in rsync protocol data stream</li>
 <li><strong>13</strong> -&#8288; Errors with program diagnostics</li>
 <li><strong>14</strong> -&#8288; Error in IPC code</li>
-<li><strong>20</strong> -&#8288; Received SIGUSR1 or SIGINT</li>
+<li><strong>15</strong> -&#8288; Sibling process crashed (e.g. core dumped).</li>
+<li><strong>16</strong> -&#8288; Sibling process was killed by a signal.</li>
+<li><strong>19</strong> -&#8288; Received SIGUSR1.</li>
+<li><strong>20</strong> -&#8288; Received SIGINT, SIGTERM, or SIGHUP.</li>
 <li><strong>21</strong> -&#8288; Some error returned by <strong>waitpid()</strong></li>
 <li><strong>22</strong> -&#8288; Error allocating core memory buffers</li>
 <li><strong>23</strong> -&#8288; Partial transfer due to error</li>
 <li><strong>24</strong> -&#8288; Partial transfer due to vanished source files</li>
-<li><strong>25</strong> -&#8288; The -&#8288;-&#8288;max-delete limit stopped deletions</li>
+<li><strong>25</strong> -&#8288; The -&#8288;-&#8288;max-&#8288;delete limit stopped deletions</li>
 <li><strong>30</strong> -&#8288; Timeout in data send/receive</li>
 <li><strong>35</strong> -&#8288; Timeout waiting for daemon connection</li>
 </ul>
@@ -4366,7 +4610,7 @@ file is included or excluded.</p>
 
 <dt id="RSYNC_ICONV"><code>RSYNC_ICONV</code><a href="#RSYNC_ICONV" class="tgt"></a></dt><dd>
 <p>Specify a default <a href="#opt--iconv"><code>--iconv</code></a> setting using this environment
-variable. First supported in 3.0.0.</p>
+variable.</p>
 </dd>
 
 <dt id="RSYNC_OLD_ARGS"><code>RSYNC_OLD_ARGS</code><a href="#RSYNC_OLD_ARGS" class="tgt"></a></dt><dd>
@@ -4377,7 +4621,7 @@ default. When this environment variable is set to a non-zero value, it
 supersedes the <a href="#RSYNC_PROTECT_ARGS"><code>RSYNC_PROTECT_ARGS</code></a> variable.</p>
 <p>This variable is ignored if <a href="#opt--old-args"><code>--old-args</code></a>, <code>--no-old-args</code>, or
 <a href="#opt--secluded-args"><code>--secluded-args</code></a> is specified on the command line.</p>
-<p>First supported in 3.2.4.</p>
+<p>First supported in 3.2.4 (April 2022).</p>
 </dd>
 
 <dt id="RSYNC_PROTECT_ARGS"><code>RSYNC_PROTECT_ARGS</code><a href="#RSYNC_PROTECT_ARGS" class="tgt"></a></dt><dd>
@@ -4386,7 +4630,7 @@ option to be enabled by default, or a zero value to make sure that it is
 disabled by default.</p>
 <p>This variable is ignored if <a href="#opt--secluded-args"><code>--secluded-args</code></a>, <code>--no-secluded-args</code>,
 or <a href="#opt--old-args"><code>--old-args</code></a> is specified on the command line.</p>
-<p>First supported in 3.1.0.  Starting in 3.2.4, this variable is ignored if
+<p>Starting in 3.2.4 (April 2022), this variable is ignored if
 <a href="#RSYNC_OLD_ARGS"><code>RSYNC_OLD_ARGS</code></a> is set to a non-zero value.</p>
 </dd>
 
@@ -4479,7 +4723,7 @@ the comments on the <a href="#opt--modify-window"><code>--modify-window</code></
 </ul>
 <p>Please report bugs! See the web site at <a href="https://rsync.samba.org/">https://rsync.samba.org/</a>.</p>
 <h2 id="VERSION">VERSION<a href="#VERSION" class="tgt"></a></h2>
-<p>This manpage is current for version 3.4.1 of rsync.</p>
+<p>This manpage is current for version 3.5.0 of rsync.</p>
 <h2 id="INTERNAL_OPTIONS">INTERNAL OPTIONS<a href="#INTERNAL_OPTIONS" class="tgt"></a></h2>
 <p>The options <code>--server</code> and <code>--sender</code> are used internally by rsync, and should
 never be typed by a user under normal circumstances.  Some awareness of these
@@ -4507,7 +4751,8 @@ David Bell.  I've probably missed some people, my apologies if I have.</p>
 <h2 id="AUTHOR">AUTHOR<a href="#AUTHOR" class="tgt"></a></h2>
 <p>Rsync was originally written by Andrew Tridgell and Paul Mackerras.  Many
 people from around the world have helped to maintain and improve it.</p>
+<p>Special thanks go to Wayne Davison, who maintained rsync from 2004 to 2024.</p>
 <p>Mailing lists for support and development are available at
 <a href="https://lists.samba.org/">https://lists.samba.org/</a>.</p>
-<div style="float: right"><p><i>15 Jan 2025</i></p></div>
+<div style="float: right"><p><i>13 Aug 2026</i></p></div>
 </body></html>

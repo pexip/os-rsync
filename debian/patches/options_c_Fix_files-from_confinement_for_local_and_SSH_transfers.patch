@@ -1,0 +1,134 @@
+From 8b8de5232efbf851689d4c2ecd942521cc795d1f Mon Sep 17 00:00:00 2001
+From: Omar Elsayed <omarelsayed161@gmail.com>
+Date: Sat, 19 Sep 2026 07:56:36 +0300
+Subject: [PATCH] options.c: Fix --files-from confinement for local and SSH
+ transfers (#1094)
+
+* Fix --files-from confinement for local and SSH transfers
+
+The recent path confinement patch caused an ELOOP error when local or SSH users tried to use a --files-from list located outside the confined root.
+
+This happened because the code treated the argument as if its always an operator-path peer. CLI arguments provided locally or over SSH are trusted, so the strict boundary check should only apply to untrusted clients connecting to a background daemon.
+
+* tests: assert local files-from copy
+
+---------
+
+Co-authored-by: Zen Dodd <mail@steadytao.com>
+---
+ options.c                              |  3 +-
+ testsuite/files-from-leak_test.py      | 26 ++++++++++++++++
+ testsuite/rrsync-userns-procfs_test.py | 42 +++++++++++++++++---------
+ 3 files changed, 55 insertions(+), 16 deletions(-)
+
+diff --git a/options.c b/options.c
+index e222fa58a..3a2ce2bda 100644
+--- a/options.c
++++ b/options.c
+@@ -2659,7 +2659,8 @@ int parse_arguments(int *argc_p, const char ***argv_p)
+ 			 * module root -- e.g. a root-owned backup symlink. No-op off a
+ 			 * daemon (the module-root check only fires when am_daemon). */
+ 			int save_opr = operator_path_resolve;
+-			operator_path_resolve = 1;
++			/* The daemon process is the only case that the files-from path comes from an untrusted argument */
++			operator_path_resolve = am_daemon ? 1 : 0;
+ 			filesfrom_fd = open_no_attacker_symlinks(files_from, O_RDONLY|O_BINARY, 0);
+ 			operator_path_resolve = save_opr;
+ 			if (filesfrom_fd < 0) {
+diff --git a/testsuite/files-from-leak_test.py b/testsuite/files-from-leak_test.py
+index e7a03725d..b310860e4 100644
+--- a/testsuite/files-from-leak_test.py
++++ b/testsuite/files-from-leak_test.py
+@@ -179,3 +179,29 @@ def root_owned_backup_symlink():
+     test_fail(f"setup failed: backup symlink {files_from} -> {tgt}, not the out-of-module secret")
+ 
+ leak()
++
++# ---- LOCAL COMMAND CONFINEMENT EDGE CASE -----------------------------------
++# A local operator invoking --confine-root should still be able to specify a
++# --files-from file that resides outside the confined boundary. The file is
++# opened locally by the operator, not as an operator-path via a daemon, so
++# it should not trip the path-walker ELOOP block.
++
++local_files_from = root / 'local_files_from.txt'
++local_file = src / 'sub' / 'files-from-local'
++local_file.write_text('local files-from content\n')
++local_files_from.write_text('sub/files-from-local\n')
++
++local_proc = subprocess.run(
++    rsync_argv('-a', f'--confine-root={base}', f'--files-from={local_files_from}',
++               f'{src}/', f'{dest}/'),
++    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
++)
++
++copied = dest / 'sub' / 'files-from-local'
++if (local_proc.returncode != 0 or not copied.is_file()
++        or copied.read_text() != 'local files-from content\n'):
++    test_fail(
++        "Local --files-from transfer did not copy the listed file while the "
++        "list was outside --confine-root.\n"
++        f"Output: {local_proc.stdout}"
++    )
+diff --git a/testsuite/rrsync-userns-procfs_test.py b/testsuite/rrsync-userns-procfs_test.py
+index fa2aaf3dc..7bd1cdb06 100644
+--- a/testsuite/rrsync-userns-procfs_test.py
++++ b/testsuite/rrsync-userns-procfs_test.py
+@@ -79,8 +79,9 @@
+     test_skipped('/proc/self does not expose an overflow uid in this namespace')
+ 
+ base = Path(tempfile.mkdtemp(prefix='rsync-userns-procfs-'))
+-src = base / 'src'
+-dest = base / 'dest'
++root = base / 'root'
++src = root / 'src'
++dest = root / 'dest'
+ outside = base / 'outside'
+ makepath(src, dest, outside)
+ (src / 'file').write_text('content\n')
+@@ -112,22 +113,33 @@
+ finally:
+     os.close(dest_fd)
+ 
+-outside_list = outside / 'files-from'
+-outside_list.write_text('file\n')
+-for fd_root in fd_roots:
+-    outside_fd = os.open(outside_list, os.O_RDONLY)
+-    try:
++backup_dir = root / 'backup'
++backup_dir.symlink_to(outside)
++(dest / 'test').write_text('old_content\n')
++(src / 'test').write_text('new_different_content\n')
++
++(outside / 'test').write_text('existing_backup\n')
++
++# Open an FD pointing to the confined root
++root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
++try:
++    for fd_root in fd_roots:
+         proc = subprocess.run(
+-            rsync_argv('-a', f'--confine-root={dest}',
+-                       f'--files-from={fd_root}/{outside_fd}',
++            rsync_argv('-a', '--backup', f'--confine-root={root}',
++                       f'--backup-dir={fd_root}/{root_fd}/backup/',
+                        str(src) + '/', str(dest) + '/'),
+-            pass_fds=(outside_fd,),
++            pass_fds=(root_fd,),
+             capture_output=True,
+             text=True,
+         )
+-    finally:
+-        os.close(outside_fd)
+-    if proc.returncode == 0 or 'failed to open files-from file' not in proc.stderr:
+-        test_fail(f'outside {fd_root} pin was not observably refused: '
+-                  f'rc={proc.returncode}, stderr={proc.stderr!r}')
++
++        # The transfer must fail because rsync attempts to unlink the pre-existing target file,
++        # forcing the path-walker to evaluate the FD pin + symlink and catching the escape.
++        if proc.returncode == 0:
++            test_fail(f'backup to outside symlink via {fd_root} pin was not observably refused: '
++                      f'rc={proc.returncode}, stderr={proc.stderr!r}')
++finally:
++    os.close(root_fd)
++
+ rmtree(base)
++

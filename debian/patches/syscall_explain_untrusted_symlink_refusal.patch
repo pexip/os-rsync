@@ -1,0 +1,54 @@
+From 59be391641de544a293c221ab96b6c0f4e04f366 Mon Sep 17 00:00:00 2001
+From: Zen Dodd <mail@steadytao.com>
+Date: Thu, 3 Sep 2026 17:05:03 +1000
+Subject: [PATCH] syscall: explain untrusted symlink refusal (#1074)
+
+* syscall: explain untrusted symlink refusal
+* syscall: emphasise insecure-links warning
+---
+ syscall.c                           |  4 ++++
+ testsuite/symlink-race-dest_test.py | 16 ++++++++++++++--
+ 2 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/syscall.c b/syscall.c
+index e5ee205f5..81e12f906 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -429,6 +429,10 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 				&& ((strcmp(abspath, "/proc") == 0 && strcmp(comp, "self") == 0)
+ 				 || (strcmp(abspath, "/dev") == 0 && strcmp(comp, "fd") == 0));
+ 			if (!namespace_pin && lst.st_uid != 0 && lst.st_uid != trusted_uid) {
++				rprintf(FERROR,
++					"refusing to follow a symlink owned by an untrusted user; "
++					"use --insecure-links locally or \"insecure links = yes\" in a "
++					"daemon module ONLY if every path component is trusted\n");
+ 				saved_errno = ELOOP;
+ 				goto out;
+ 			}
+diff --git a/testsuite/symlink-race-dest_test.py b/testsuite/symlink-race-dest_test.py
+index 04df413ae..7b500dd8d 100644
+--- a/testsuite/symlink-race-dest_test.py
++++ b/testsuite/symlink-race-dest_test.py
+@@ -50,8 +50,20 @@
+ os.symlink(outside, dest / 'sub')               # attacker-owned dest component
+ os.lchown(dest / 'sub', ATT_UID, ATT_UID)
+ 
+-subprocess.run(rsync_argv('-a', f'{src}/sub/', f'{dest}/sub/'),
+-               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++proc = subprocess.run(
++    rsync_argv('-a', f'{src}/sub/', f'{dest}/sub/'),
++    stdout=subprocess.DEVNULL,
++    stderr=subprocess.PIPE,
++    text=True,
++)
++
++if proc.returncode == 0:
++    test_fail("attacker-owned destination symlink was not rejected")
++if "refusing to follow a symlink owned by an untrusted user" not in proc.stderr:
++    test_fail(
++        "untrusted destination symlink failure omitted the actionable "
++        f"diagnostic: {proc.stderr!r}"
++    )
+ 
+ escaped = sorted(p.name for p in outside.iterdir())
+ if escaped:
