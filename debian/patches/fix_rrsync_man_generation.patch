@@ -12,7 +12,7 @@ This patch needs to be reviewed before being submitted to upstream.
  1 file changed, 2 insertions(+), 6 deletions(-)
 
 diff --git a/maybe-make-man b/maybe-make-man
-index c7af739..d0b9660 100755
+index b751ebc..1888559 100755
 --- a/maybe-make-man
 +++ b/maybe-make-man
 @@ -23,12 +23,8 @@ if [ ! -f "$flagfile" ]; then

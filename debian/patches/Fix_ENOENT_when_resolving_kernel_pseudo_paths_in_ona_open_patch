@@ -1,0 +1,312 @@
+From: Omar Elsayed <omarelsayed161@gmail.com>
+Date: Thu, 3 Sep 2026 01:11:16 +0300
+Subject: [PATCH] Fix ENOENT when resolving kernel pseudo-paths in ona_open
+ (#1054)
+
+* Fix ona_open to safely resolve bash process substitution pseudo-paths
+Bash process substitution (e.g., `<(...)` or `>(...)`) exposes file
+descriptors as symlinks under `/proc/self/fd/X` pointing to kernel
+pseudo-paths such as `pipe:[12345]`. Previously, `ona_open()` would read
+this target and attempt to resolve it as a literal file path on disk,
+causing the operation to fail with `ENOENT` and breaking legitimate local
+process substitution.
+
+This patch safely intercepts and resolves these pseudo-paths while
+maintaining strict confinement boundaries and averting TOCTOU risks:
+
+- Detects kernel pseudo-paths (`pipe:[`, `socket:[`, `anon_inode:`)
+  only when `fd_pin_tail` confirms the path resolves precisely to a
+  direct child of a valid FD directory.
+- Categorically rejects pseudo-path resolution if `confine_root` is
+  active (yielding `ENOENT`).
+- Strips `O_NOFOLLOW` for legitimate leaf pseudo-paths, allowing
+  `openat()` to correctly delegate resolution.
+- Reverts `fd_pin_tail` to its upstream signature, as manual PID
+  validation is no longer required due to the secure `openat()` design.
+
+* testsuite: expect pseudo-path skip on Alma
+* syscall: reject trailing pseudo-path components
+
+---------
+
+Co-authored-by: Zen Dodd <mail@steadytao.com>
+
+Backported-by: Samuel Henrique <samueloph@debian.org>
+ * Drop the .github/workflows/almalinux-8-build.yml hunk, the directory
+   is not present in the +ds tarball
+ * Refresh context
+---
+ syscall.c                                         |  41 ++++++-
+ testsuite/pseudo-paths_test.py                    | 138 ++++++++++++++++++++++
+ testsuite/skiplist/README.md                      |   1 +
+ testsuite/skiplist/{linux.txt => almalinux-8.txt} |   6 +-
+ testsuite/skiplist/cygwin.txt                     |   1 +
+ testsuite/skiplist/macos.txt                      |   1 +
+ 6 files changed, 181 insertions(+), 7 deletions(-)
+ create mode 100644 testsuite/pseudo-paths_test.py
+ copy testsuite/skiplist/{linux.txt => almalinux-8.txt} (53%)
+
+diff --git a/syscall.c b/syscall.c
+index 68a7eea..54ac051 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -314,8 +314,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 	 * (abspath_outside_confinement).  A relative operator path starts at the
+ 	 * daemon's cwd == the module root; an absolute one (or a followed absolute
+ 	 * symlink target) restarts at "/". */
+-	char abspath[MAXPATHLEN];
+-	abspath[0] = '\0';
++	char abspath[MAXPATHLEN] = {0};
+ 	if (am_daemon && module_dir && module_dir[0] == '/')
+ 		strlcpy(abspath, module_dir, sizeof abspath);	/* "/" for a path=/ module */
+ 	else if (confine_root) {
+@@ -339,7 +338,8 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 	 * reach the magic link.  This only suspends the check for that prefix:
+ 	 * following the link restarts the walk at its absolute target, and every
+ 	 * component of THAT is checked, so a pin aimed outside is still refused. */
+-	int pin_transit = !am_daemon && confine_root && fd_pin_tail(path) != NULL;
++	const char *ptail = fd_pin_tail(path);
++	int pin_transit = !am_daemon && confine_root && ptail != NULL;
+ 
+ 	/* Path-walk state. `remaining` is the unconsumed tail; we splice
+ 	 * symlink targets back into it as we go. Sized 2x MAXPATHLEN so a
+@@ -429,6 +429,41 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 			}
+ 			target[n] = '\0';
+ 
++			/* Detect Linux kernel pseudo-paths (pipes, sockets, anon_inodes).
++			 * These are not real paths on disk and never contain slashes. */
++			const char *abstail = fd_pin_tail(abspath);
++			int is_fd_dir = (abstail != NULL && *abstail == '\0' && ptail != NULL);
++			if (is_fd_dir && (strncmp(target, "pipe:[", 6) == 0
++			    || strncmp(target, "socket:[", 8) == 0
++			    || strncmp(target, "anon_inode:", 11) == 0)) {
++				if (!is_last) {
++					saved_errno = ENOTDIR;
++					goto out;
++				}
++				if (confine_root) {
++					/* Anonymous objects cannot be proven to reside beneath
++					 * the confinement root. */
++					saved_errno = ENOENT;
++					goto out;
++				}
++				/* Process substitution exposes /dev/fd/X as a symlink to a
++				 * kernel object. Reopen the validated leaf without O_NOFOLLOW
++				 * so the kernel applies the caller's requested open flags. */
++				retfd = openat(dfd, comp, (flags & ~O_NOFOLLOW) | O_CLOEXEC, mode);
++				/* Refuse a descriptor that changed to a filesystem object
++				 * between validation and openat(). */
++				if (retfd >= 0) {
++					STRUCT_STAT pst;
++					if (fstat(retfd, &pst) < 0 || S_ISREG(pst.st_mode) || S_ISDIR(pst.st_mode)) {
++						close(retfd);
++						retfd = -1;
++						errno = ELOOP;
++					}
++				}
++				saved_errno = retfd < 0 ? errno : 0;
++				goto out;
++			}
++
+ 			/* Splice: new `remaining` = <target> + <tail-after-comp>.
+ 			 * Absolute target restarts the walk from "/". */
+ 			char tail[MAXPATHLEN];
+diff --git a/testsuite/pseudo-paths_test.py b/testsuite/pseudo-paths_test.py
+new file mode 100644
+index 0000000..f72b48e
+--- /dev/null
++++ b/testsuite/pseudo-paths_test.py
+@@ -0,0 +1,138 @@
++"""Process substitution /dev/fd/ write pipe pseudo-paths for --log-file must not crash and must successfully write logs, but must be rejected if confined root."""
++
++import shlex
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++from rsyncfns import (
++    SCRATCHDIR, makepath, rmtree, rsync_argv, test_fail, test_skipped,
++)
++if not sys.platform.startswith('linux'):
++    test_skipped('Kernel pseudo-path string is a Linux-specific procfs feature')
++    raise SystemExit(0)
++
++# We require bash specifically because standard POSIX /bin/sh does not
++# guarantee support for >(...) process substitution syntax.
++bash = shutil.which('bash')
++if bash is None:
++    test_skipped('bash is unavailable, cannot test process substitution')
++
++# Verify the host bash actually supports process substitution
++probe = subprocess.run(
++    [bash, '-c', 'echo "probe" > >(cat > /dev/null)'],
++    capture_output=True
++)
++if probe.returncode != 0:
++    test_skipped('bash process substitution is not supported on this system')
++
++base = Path(SCRATCHDIR / 'rsync-pseudo-path').resolve()
++src = base / 'src'
++dest = base / 'dest'
++log_out = base / 'test_log.txt'
++log_out_confined = base / 'test_log_confined.txt'
++makepath(src, dest)
++
++(src / 'transfer_me.txt').write_text('sync this\n')
++
++rsync_base_cmd = shlex.join(rsync_argv('-a'))
++src_path = shlex.quote(str(src) + '/')
++dest_path = shlex.quote(str(dest) + '/')
++
++log_path = shlex.quote(str(log_out))
++log_path_confined = shlex.quote(str(log_out_confined))
++
++# -------------------------------------------------------------------------
++# TEST 1: Unconfined process substitution (Should Succeed)
++# -------------------------------------------------------------------------
++bash_script = f"{rsync_base_cmd} -v --log-file=>(cat > {log_path}) {src_path} {dest_path}"
++
++try:
++    proc = subprocess.run(
++        [bash, '-c', bash_script],
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++except subprocess.TimeoutExpired:
++    rmtree(base)
++    test_fail('process substitution test timed out')
++
++ctx = f'rc={proc.returncode}, stderr={proc.stderr.strip()!r}'
++
++if proc.returncode != 0:
++    rmtree(base)
++    test_fail(f'rsync crashed writing to a pseudo-path log pipe ({ctx})')
++
++if not (dest / 'transfer_me.txt').is_file():
++    rmtree(base)
++    test_fail(f'rsync failed to transfer the allowed file ({ctx})')
++
++if not log_out.exists() or log_out.stat().st_size == 0:
++    rmtree(base)
++    test_fail(f'rsync survived, but failed to write data to the log pipe ({ctx})')
++
++log_data = log_out.read_text()
++if "transfer_me.txt" not in log_data:
++    rmtree(base)
++    test_fail(f'Log pipe received data, but is missing expected output: {log_data[:100]}')
++
++print('Test 1 Passed: rsync successfully wrote logs to a process substitution pseudo-path')
++
++# -------------------------------------------------------------------------
++# TEST 2: Confined Root (Should Reject Pseudo-path)
++# -------------------------------------------------------------------------
++bash_script_confined = f"{rsync_base_cmd} --confine-root={dest_path} -v --log-file=>(cat > {log_path_confined}) {src_path} {dest_path}"
++
++try:
++    proc_confined = subprocess.run(
++        [bash, '-c', bash_script_confined],
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++except subprocess.TimeoutExpired:
++    rmtree(base)
++    test_fail('confined process substitution test timed out')
++
++ctx_confined = f'rc={proc_confined.returncode}, stderr={proc_confined.stderr.strip()!r}'
++
++# Rsync considers log-file failure a warning, so it still exits 0.
++stderr_lower = proc_confined.stderr.lower()
++if "no such file or directory" in stderr_lower and "failed to open" in stderr_lower:
++    if log_out_confined.exists() and log_out_confined.stat().st_size > 0:
++        rmtree(base)
++        test_fail(f'rsync printed an error but still wrote the confined log! ({ctx_confined})')
++    print('Test 2 Passed: rsync correctly rejected the pseudo-path when confine_root was active')
++else:
++    rmtree(base)
++    test_fail(f'rsync failed to reject the pseudo-path or had an unexpected error ({ctx_confined})')
++
++# A pseudo-path is valid only when its descriptor number is the final component.
++rmtree(dest)
++makepath(dest)
++trailing_script = (
++    f'pipe_path=<(printf "transfer_me.txt\\n"); '
++    f'{rsync_base_cmd} --exclude-from="$pipe_path/trailing" {src_path} {dest_path}'
++)
++try:
++    proc_trailing = subprocess.run(
++        [bash, '-c', trailing_script],
++        capture_output=True,
++        text=True,
++        timeout=10,
++    )
++except subprocess.TimeoutExpired:
++    rmtree(base)
++    test_fail('trailing-component pseudo-path test timed out')
++
++if proc_trailing.returncode == 0:
++    rmtree(base)
++    test_fail('/dev/fd/N/trailing unexpectedly opened descriptor N')
++if (dest / 'transfer_me.txt').exists():
++    rmtree(base)
++    test_fail('transfer continued after accepting a trailing pseudo-path component')
++
++rmtree(base)
++raise SystemExit(0)
+diff --git a/testsuite/skiplist/README.md b/testsuite/skiplist/README.md
+index 31dd457..2e822ef 100644
+--- a/testsuite/skiplist/README.md
++++ b/testsuite/skiplist/README.md
+@@ -23,6 +23,7 @@ different tests merge cleanly.
+ | file | contents |
+ | --- | --- |
+ | `common.txt` | skipped on every platform that runs the oracle — mostly `require_tcp` / `require_asan` tests, which the default stdio-pipe `make check` cannot satisfy |
++| `almalinux-8.txt` | AlmaLinux 8 container additions |
+ | `linux.txt` | Linux-only additions |
+ | `macos.txt` | macOS-only additions |
+ | `cygwin.txt` | Cygwin-only additions |
+diff --git a/testsuite/skiplist/linux.txt b/testsuite/skiplist/almalinux-8.txt
+similarity index 53%
+copy from testsuite/skiplist/linux.txt
+copy to testsuite/skiplist/almalinux-8.txt
+index b89100d..483ac8c 100644
+--- a/testsuite/skiplist/linux.txt
++++ b/testsuite/skiplist/almalinux-8.txt
+@@ -3,8 +3,6 @@
+ # from a workflow as RSYNC_EXPECT_SKIPPED=@testsuite/skiplist/<file>[,@...].
+ # See testsuite/skiplist/README.md.
+ #
+-# Linux-only additions to common.txt.
++# AlmaLinux 8 container additions to common.txt and linux.txt.
+ 
+-crtimes  # Rsync is configured without crtimes support
+-partial-protected-regular-retry-policy  # deterministic partial EACCES recovery uses dyld interposing
+-readonly-partial-abort-mode-regression  # 
++pseudo-paths  # Bash process substitution is unavailable in the AlmaLinux 8 container
+diff --git a/testsuite/skiplist/cygwin.txt b/testsuite/skiplist/cygwin.txt
+index 46060e1..84dbb7b 100644
+--- a/testsuite/skiplist/cygwin.txt
++++ b/testsuite/skiplist/cygwin.txt
+@@ -52,6 +52,7 @@ partial-protected-regular-retry-linux
+ partial-protected-regular-retry-policy  # deterministic partial EACCES recovery uses dyld interposing
+ password-file-symlink
+ protected-regular
++pseudo-paths
+ rename-mixed-parent-transfer
+ rrsync-sender-leaf-flip
+ rrsync-sender-parent-pin
+diff --git a/testsuite/skiplist/macos.txt b/testsuite/skiplist/macos.txt
+index 5952c81..fcc41a4 100644
+--- a/testsuite/skiplist/macos.txt
++++ b/testsuite/skiplist/macos.txt
+@@ -22,6 +22,7 @@ open-noatime
+ partial-protected-regular-retry-linux
+ preallocate
+ protected-regular
++pseudo-paths  # dynamically skips on runners lacking bash process substitution
+ readonly-partial-abort-mode-regression  # 
+ rrsync-sender-leaf-flip
+ rrsync-sender-parent-pin

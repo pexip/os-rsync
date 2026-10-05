@@ -218,9 +218,10 @@ Files: testsuite/daemon-gzip-download.test
 Copyright: 2001, 2002 Martin Pool <mbp@samba.org>
 License: GPL-2+
 
-Files: runtests.sh
+Files: runtests.py
 Copyright: 2001, 2002 Martin Pool <mbp@samba.org>
-           2003-2022 Wayne Davison <wayne@opencoder.net>
+           2003-2022 Wayne Davison
+           2026 Andrew Tridgell
 License: GPL-2
 
 Files: testsuite/rsync.fns

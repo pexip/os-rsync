@@ -4,8 +4,10 @@ set -e
 echo "debian/rules override_dh_auto_configure "
 debian/rules override_dh_auto_configure
 
-# Supress gcc warnings (autopkg treats them as failures)
-make tls getgroups getfsdev t_chmod_secure t_secure_relpath trimslash t_unsafe wildtest testrun 2>/dev/null
+# Suppress gcc warnings (autopkgtest treats them as failures)
+make check-progs 2>/dev/null
 
 # Run tests
-rsync_bin="/usr/bin/rsync" ./runtests.sh
+# installcheck "does *not* depend on building or installing: you can
+# use it to check a version installed from a binary"
+make installcheck

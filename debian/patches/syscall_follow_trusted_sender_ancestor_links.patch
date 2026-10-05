@@ -1,0 +1,1177 @@
+From 7c7e1bee860a97b1357ec29eac9656768beb2e63 Mon Sep 17 00:00:00 2001
+From: Zen Dodd <mail@steadytao.com>
+Date: Sun, 20 Sep 2026 23:36:00 +1000
+Subject: [PATCH] syscall: follow trusted sender ancestor links (#1088)
+
+* syscall: follow trusted sender ancestor links
+* testsuite: accept BSD symlink errors
+* syscall: anchor sender paths at explicit source roots
+* flist: pin explicit file source parents
+* flist: preserve search-only source traversal
+* sender: follow trusted files-from ancestors
+* sender: enforce files-from symlink ownership
+* sender: harden files-from path resolution
+---
+ SECURITY.md                                |   7 +
+ flist.c                                    | 259 +++++++++++++++++-
+ rsync.1.md                                 |  11 +-
+ sender.c                                   |  46 ++--
+ syscall.c                                  | 141 +++++++---
+ t_secure_relpath.c                         |   1 -
+ t_stub.c                                   |   2 +
+ testsuite/relative-source-ancestor_test.py | 296 +++++++++++++++++++++
+ 8 files changed, 695 insertions(+), 68 deletions(-)
+ create mode 100644 testsuite/relative-source-ancestor_test.py
+
+diff --git a/SECURITY.md b/SECURITY.md
+index bcc849196..b77e1473c 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -188,6 +188,13 @@ module uid even when the module sits under a directory that uid cannot traverse
+ immune to the logical-path-versus-real-cwd skew a followed in-tree directory
+ symlink would otherwise introduce.
+ 
++When a sender receives a `--files-from` list in the default symlink mode, the
++source base remains the operator's choice but each path selected by the list is
++checked with the ownership walk. A trusted ancestor symlink may still be
++followed; with `--confine-root` its resolved target must also remain under that
++root. The final content open remains `O_NOFOLLOW`, so a list entry cannot turn a
++leaf symlink into a file read.
++
+ ### Path resolution
+ 
+ `secure_relative_open()` resolves a path with a single portable mechanism on
+diff --git a/flist.c b/flist.c
+index 9276c65fc..17ad5a57d 100644
+--- a/flist.c
++++ b/flist.c
+@@ -46,6 +46,7 @@ extern int recurse;
+ extern int use_qsort;
+ extern int xfer_dirs;
+ extern int filesfrom_fd;
++extern char *files_from;
+ extern int one_file_system;
+ extern int copy_devices;
+ extern int copy_dirlinks;
+@@ -70,6 +71,7 @@ extern int prune_empty_dirs;
+ extern int copy_links;
+ extern int copy_unsafe_links;
+ extern int insecure_links;
++extern int filesfrom_owner_walk_override;
+ extern int protocol_version;
+ extern int sanitize_paths;
+ extern int munge_symlinks;
+@@ -230,27 +232,250 @@ static int scan_dirfd = -1;
+ static const char *scan_dir_prefix;
+ static int scan_dir_prefix_len;
+ 
++struct sender_source_root {
++	struct sender_source_root *next;
++	dev_t dev;
++	ino_t ino;
++	char path[1];
++};
++
++static struct sender_source_root *sender_source_roots;
++static struct sender_source_root *sender_source_root_fd_owner;
++static int sender_source_root_fd = -1;
++
++static int sender_source_full_path(const char *path, char *full, size_t full_size)
++{
++	size_t len;
++
++	if (*path == '/')
++		len = strlcpy(full, path, full_size);
++	else
++		len = pathjoin(full, full_size, curr_dir, path);
++	if (len >= full_size) {
++		errno = ENAMETOOLONG;
++		return -1;
++	}
++	clean_fname(full, CFN_COLLAPSE_DOT_DOT_DIRS | CFN_DROP_TRAILING_DOT_DIR);
++	return 0;
++}
++
++static void remember_sender_source_root(const char *path, const STRUCT_STAT *st)
++{
++	struct sender_source_root *root;
++	char full[MAXPATHLEN];
++	size_t len;
++
++	if (sender_source_full_path(path, full, sizeof full) < 0)
++		overflow_exit("remember_sender_source_root");
++	len = strlen(full);
++
++	for (root = sender_source_roots; root; root = root->next) {
++		if (strcmp(root->path, full) == 0)
++			return;
++	}
++	root = (struct sender_source_root *)new_array(char, sizeof *root + len);
++	root->next = sender_source_roots;
++	root->dev = st->st_dev;
++	root->ino = st->st_ino;
++	memcpy(root->path, full, len + 1);
++	sender_source_roots = root;
++}
++
++static void remember_sender_source_arg(const char *path, const STRUCT_STAT *st)
++{
++	STRUCT_STAT parent_st;
++	char full[MAXPATHLEN], *slash;
++
++	if (S_ISDIR(st->st_mode)) {
++		remember_sender_source_root(path, st);
++		return;
++	}
++	if (sender_source_full_path(path, full, sizeof full) < 0)
++		overflow_exit("remember_sender_source_arg");
++	slash = strrchr(full, '/');
++	if (!slash)
++		return;
++	if (slash == full)
++		slash[1] = '\0';
++	else
++		*slash = '\0';
++	/* The operator selected this parent as part of the source argument. Pin
++	 * its resolved identity while the file leaf remains O_NOFOLLOW later. */
++	if (do_stat(full, &parent_st) == 0 && S_ISDIR(parent_st.st_mode))
++		remember_sender_source_root(full, &parent_st);
++}
++
++#if defined AT_FDCWD && defined O_NOFOLLOW && defined O_DIRECTORY
++/* Keep one validated source root open at a time.  A descriptor per explicit
++ * argument would make a large argument list exhaust the process limit. */
++static int sender_source_root_fd_for(struct sender_source_root *root)
++{
++	STRUCT_STAT st;
++	int fd, fl, saved_errno;
++
++	if (sender_source_root_fd_owner == root && sender_source_root_fd >= 0)
++		return sender_source_root_fd;
++	if (sender_source_root_fd >= 0)
++		close(sender_source_root_fd);
++	sender_source_root_fd = -1;
++	sender_source_root_fd_owner = NULL;
++
++	fd = open_anchor_dirfd(root->path);
++	if (fd < 0)
++		return -1;
++	if (do_fstat(fd, &st) < 0)
++		saved_errno = errno;
++	else if (st.st_dev != root->dev || st.st_ino != root->ino)
++		saved_errno = ELOOP;
++	else
++		saved_errno = 0;
++	if (saved_errno) {
++		close(fd);
++		errno = saved_errno;
++		return -1;
++	}
++	if ((fl = fcntl(fd, F_GETFD)) >= 0)
++		fcntl(fd, F_SETFD, fl | FD_CLOEXEC);
++	sender_source_root_fd_owner = root;
++	sender_source_root_fd = fd;
++	return fd;
++}
++#endif
++
++int open_sender_source_path(const char *path, int flags, int *matched)
++{
++#if defined AT_FDCWD && defined O_NOFOLLOW && defined O_DIRECTORY
++	struct sender_source_root *root, *best = NULL;
++	char full[MAXPATHLEN], *rel;
++	size_t best_len = 0;
++	int rootfd, fd, saved_errno;
++
++	*matched = 0;
++	if (!sender_source_roots)
++		return -1;
++	if (sender_source_full_path(path, full, sizeof full) < 0)
++		return -1;
++	for (root = sender_source_roots; root; root = root->next) {
++		size_t len = strlen(root->path);
++		if (len > best_len && strncmp(full, root->path, len) == 0
++		 && (root->path[len-1] == '/' || full[len] == '\0' || full[len] == '/')) {
++			best = root;
++			best_len = len;
++		}
++	}
++	if (!best)
++		return -1;
++
++	*matched = 1;
++	rootfd = sender_source_root_fd_for(best);
++	if (rootfd < 0)
++		return -1;
++	rel = full + best_len;
++	while (*rel == '/')
++		rel++;
++	fd = secure_relative_open_at(rootfd, *rel ? rel : ".", flags, 0);
++	saved_errno = errno;
++	errno = saved_errno;
++	return fd;
++#else
++	*matched = 0;
++	errno = ENOSYS;
++	return -1;
++#endif
++}
++
++void clear_sender_source_roots(void)
++{
++	if (sender_source_root_fd >= 0)
++		close(sender_source_root_fd);
++	sender_source_root_fd = -1;
++	sender_source_root_fd_owner = NULL;
++	while (sender_source_roots) {
++		struct sender_source_root *root = sender_source_roots;
++		sender_source_roots = root->next;
++		free(root);
++	}
++}
++
++static int filesfrom_link_stat(const char *path, STRUCT_STAT *stp, int follow_dirlinks)
++{
++#if defined AT_FDCWD && defined O_NOFOLLOW && defined O_DIRECTORY
++	const char *bname;
++	int dfd, ret, save_errno;
++
++	dfd = owner_walk_parent(path, &bname);
++	if (dfd < 0)
++		return -1;
++	if (am_root < 0) {
++		close(dfd);
++		return link_stat(path, stp, follow_dirlinks);
++	}
++	ret = do_lstat_atfd(dfd, bname, stp);
++	/* A list-selected directory symlink is a path component too. Resolve it
++	 * through the ownership and confinement walk before following it. */
++	if (ret == 0 && S_ISLNK(stp->st_mode)
++	 && (follow_dirlinks || copy_links)) {
++		int targetfd = open_no_attacker_symlinks_dirfd(path);
++		if (targetfd >= 0) {
++			ret = do_fstat(targetfd, stp);
++			close(targetfd);
++		} else if (errno != ENOENT && errno != ENOTDIR && errno != EACCES) {
++			ret = -1;
++		}
++	}
++	save_errno = ret < 0 ? errno : 0;
++	close(dfd);
++	errno = save_errno;
++	return ret;
++#else
++	return link_stat(path, stp, follow_dirlinks);
++#endif
++}
++
++static int filesfrom_readlink(const char *path, char *linkbuf, size_t bufsiz)
++{
++#if defined AT_FDCWD && defined O_NOFOLLOW && defined O_DIRECTORY
++	const char *bname;
++	int dfd, ret, save_errno;
++
++	dfd = owner_walk_parent(path, &bname);
++	if (dfd < 0)
++		return -1;
++	ret = do_readlink_atfd(dfd, bname, linkbuf, bufsiz);
++	save_errno = ret < 0 ? errno : 0;
++	close(dfd);
++	errno = save_errno;
++	return ret;
++#else
++	return do_readlink(path, linkbuf, bufsiz);
++#endif
++}
++
+ static int scan_link_stat(const char *path, STRUCT_STAT *stp, int follow_dirlinks)
+ {
+ 	/* Use the held scan fd only for a single component directly inside the
+ 	 * scanned dir, and only when am_root >= 0 (link_stat_at folds in no
+ 	 * fake-super %stat xattr; link_stat does so via get_stat_xattr, a no-op
+ 	 * once am_root >= 0). */
+-	if (scan_dirfd >= 0 && am_root >= 0
++	if (scan_dirfd >= 0 && am_root >= 0 && !filesfrom_owner_walk_active()
+ 	 && strncmp(path, scan_dir_prefix, scan_dir_prefix_len) == 0
+ 	 && path[scan_dir_prefix_len] == '/'
+ 	 && strchr(path + scan_dir_prefix_len + 1, '/') == NULL)
+ 		return link_stat_at(scan_dirfd, path + scan_dir_prefix_len + 1, stp, follow_dirlinks);
++	if (filesfrom_owner_walk_active())
++		return filesfrom_link_stat(path, stp, follow_dirlinks);
+ 	return link_stat(path, stp, follow_dirlinks);
+ }
+ 
+ static int scan_readlink(const char *path, char *linkbuf, size_t bufsiz)
+ {
+-	if (scan_dirfd >= 0 && am_root >= 0
++	if (scan_dirfd >= 0 && am_root >= 0 && !filesfrom_owner_walk_active()
+ 	 && strncmp(path, scan_dir_prefix, scan_dir_prefix_len) == 0
+ 	 && path[scan_dir_prefix_len] == '/'
+ 	 && strchr(path + scan_dir_prefix_len + 1, '/') == NULL)
+ 		return do_readlink_atfd(scan_dirfd, path + scan_dir_prefix_len + 1, linkbuf, bufsiz);
++	if (filesfrom_owner_walk_active())
++		return filesfrom_readlink(path, linkbuf, bufsiz);
+ 	return do_readlink(path, linkbuf, bufsiz);
+ }
+ 
+@@ -2014,7 +2239,7 @@ static void interpret_stat_error(const char *fname, int is_dir)
+ }
+ 
+ #if defined HAVE_FDOPENDIR && defined HAVE_DIRFD
+-/* Open a source directory for scanning confined beneath the transfer root.
++/* Open a source directory for scanning under the applicable source authority.
+  * secure_relative_open() does a per-component O_NOFOLLOW walk that refuses a
+  * parent component raced into a symlink pointing out of the tree; fdopendir()
+  * then turns the held fd into the DIR* the scan reads.  This mirrors the
+@@ -2025,13 +2250,24 @@ static void interpret_stat_error(const char *fname, int is_dir)
+  * O_NOFOLLOW makes secure_relative_open() follow in-tree directory symlinks
+  * beneath the anchor and refuse escapes, so this serves both the default
+  * no-follow scan and a daemon's symlink-following scan (see the caller).
++ * Files-from entries instead use the ownership walk: their source base is
++ * operator-selected, but each list entry may not be, so only trusted-owned
++ * symlinks are followed and a trusted link may retain its legacy target.
+  * Returns NULL with errno set on failure, like opendir(). */
+ static DIR *secure_opendir(const char *fbuf)
+ {
+-	int dfd, fl;
++	int dfd, fl, matched;
+ 	DIR *d;
+ 
+-	if (am_daemon && (!am_chrooted || module_dirlen)
++	if (filesfrom_owner_walk_active()) {
++		/* The source base is operator-selected, while each list entry may not
++		 * be. Follow only trusted-owned symlinks while opening the directory. */
++		dfd = open_no_attacker_symlinks(fbuf, O_RDONLY | O_DIRECTORY, 0);
++	} else if (!am_daemon && am_sender
++	 && (dfd = open_sender_source_path(fbuf, O_RDONLY | O_DIRECTORY, &matched), matched)) {
++		/* The command-line directory is the operator-selected transfer root.
++		 * Follow that root, then keep every recursive scan beneath its held fd. */
++	} else if (am_daemon && (!am_chrooted || module_dirlen)
+ 	 && module_dir && module_dir[0] == '/' && *fbuf != '/' && module_dirfd >= 0
+ 	 && curr_dir_len >= module_dirlen
+ 	 && strncmp(curr_dir, module_dir, module_dirlen) == 0
+@@ -2251,8 +2487,11 @@ static void send_implied_dirs(int f, struct file_list *flist, char *fname,
+ 	if (need_new_dir) {
+ 		int save_copy_links = copy_links;
+ 		int save_xfer_dirs = xfer_dirs;
++		int save_filesfrom_owner_walk = filesfrom_owner_walk_override;
+ 		char *slash;
+ 
++		if (filesfrom_owner_walk_active())
++			filesfrom_owner_walk_override = 1;
+ 		copy_links = xfer_dirs = 1;
+ 
+ 		*limit = '\0';
+@@ -2281,6 +2520,7 @@ static void send_implied_dirs(int f, struct file_list *flist, char *fname,
+ 
+ 		copy_links = save_copy_links;
+ 		xfer_dirs = save_xfer_dirs;
++		filesfrom_owner_walk_override = save_filesfrom_owner_walk;
+ 
+ 		if (!inc_recurse)
+ 			goto done;
+@@ -2333,7 +2573,7 @@ static void send1extra(int f, struct file_struct *file, struct file_list *flist)
+ 	if (file->flags & FLAG_CONTENT_DIR) {
+ 		if (one_file_system) {
+ 			STRUCT_STAT st;
+-			if (link_stat(fbuf, &st, copy_dirlinks) != 0) {
++			if (scan_link_stat(fbuf, &st, copy_dirlinks) != 0) {
+ 				interpret_stat_error(fbuf, True);
+ 				return;
+ 			}
+@@ -2369,7 +2609,7 @@ static void send1extra(int f, struct file_struct *file, struct file_list *flist)
+ 		if (name_type != NORMAL_NAME) {
+ 			STRUCT_STAT st = {0};
+ 
+-			if (name_type != MISSING_NAME && link_stat(fbuf, &st, 1) != 0) {
++			if (name_type != MISSING_NAME && scan_link_stat(fbuf, &st, 1) != 0) {
+ 				interpret_stat_error(fbuf, True);
+ 				continue;
+ 			}
+@@ -2694,7 +2934,7 @@ struct file_list *send_file_list(int f, int argc, char *argv[])
+ 		if (fn != fbuf)
+ 			memmove(fbuf, fn, len + 1);
+ 
+-		if (link_stat(fbuf, &st, copy_dirlinks || name_type != NORMAL_NAME) != 0
++		if (scan_link_stat(fbuf, &st, copy_dirlinks || name_type != NORMAL_NAME) != 0
+ 		 || (name_type != DOTDIR_NAME && is_excluded(fbuf, S_ISDIR(st.st_mode) != 0, SERVER_FILTERS))
+ 		 || (relative_paths && path_is_daemon_excluded(fbuf, 1))) {
+ 			if (errno != ENOENT || missing_args == 0) {
+@@ -2724,6 +2964,9 @@ struct file_list *send_file_list(int f, int argc, char *argv[])
+ 			rprintf(FINFO, "skipping directory %s\n", fbuf);
+ 			continue;
+ 		}
++		if (!am_daemon && !use_ff_fd && st.st_mode != 0
++		 && (relative_paths || S_ISDIR(st.st_mode)))
++			remember_sender_source_arg(fbuf, &st);
+ 
+ 		if (inc_recurse && relative_paths && *fbuf) {
+ 			if ((p = strchr(fbuf+1, '/')) != NULL) {
+diff --git a/rsync.1.md b/rsync.1.md
+index 8ef6a1c7b..ebc504b70 100644
+--- a/rsync.1.md
++++ b/rsync.1.md
+@@ -1424,10 +1424,13 @@ sign) if you want the local shell to expand it.
+ 
+ 0.  `--confine-root=DIR`
+ 
+-    This bounds where the paths listed under [`--insecure-links`](#opt) are
+-    allowed to resolve: one that ends up outside DIR is refused, even if every
+-    symlink along it was owned by a trusted user.  The ownership walk asks who
+-    planted a link; this asks where the path came out.
++    In the default symlink mode this bounds where operator option paths and
++    paths selected from a [`--files-from`](#opt) list are allowed to resolve:
++    one that ends up outside DIR is refused, even if every symlink along it was
++    owned by a trusted user. Explicit source roots remain operator-selected
++    transfer roots.
++    The ownership walk asks who planted a link; this asks where the path came
++    out.
+ 
+     DIR must be absolute.  Nothing is confined by default, and
+     `--confine-root=/` is a no-op.
+diff --git a/sender.c b/sender.c
+index ba40b9468..1ff6a1d63 100644
+--- a/sender.c
++++ b/sender.c
+@@ -56,6 +56,7 @@ extern char *module_dir;
+ extern int module_dirfd;
+ extern int write_batch;
+ extern int file_old_total;
++extern char *files_from;
+ extern BOOL want_progress_now;
+ extern struct stats stats;
+ extern struct file_list *cur_flist, *first_flist, *dir_flist;
+@@ -90,6 +91,9 @@ static int secure_sender_parent_fd(struct file_struct *file, const char *fname,
+ 		return -1;
+ 	}
+ 
++	if (filesfrom_owner_walk_active())
++		return owner_walk_parent(fname, bname_p);
++
+ 	if (!am_daemon || !module_dir || module_dir[0] != '/') {
+ 		/* Local (non-daemon) sender: there is no module root to anchor at, but
+ 		 * still confine the parent via the shared held ancestor-dirfd stack
+@@ -680,26 +684,27 @@ void send_files(int f_in, int f_out)
+ 			else
+ 				fd = sender_open_confined(module_dir, relp, O_RDONLY);
+ 		} else if (!copy_links && !copy_unsafe_links && !copy_dirlinks && !insecure_links) {
+-			/* Default symlink handling (no dir-link following): the scan
+-			 * recorded this as a regular file.  Open it confined beneath the
+-			 * transfer root: an in-tree symlinked parent (e.g. -R keeps one in
+-			 * the path) is followed beneath the root, a parent raced into a
+-			 * symlink pointing out of the tree is refused, and O_NOFOLLOW
+-			 * governs the leaf so a raced leaf symlink is refused.  A
+-			 * symlink-following mode (-L/--copy-unsafe-links/-k) or
+-			 * --insecure-links keeps the legacy open below. */
+-			if (fname[0] == '/') {
+-				/* --relative (or a --files-from absolute name) keeps the
+-				 * full absolute path as fname; the transfer root is then "/",
+-				 * so anchor the confined open there and strip the leading
+-				 * slash to the module-relative path the resolver wants -- it
+-				 * rejects an absolute relpath outright. */
+-				const char *relp = fname;
+-				while (*relp == '/')
+-					relp++;
+-				fd = sender_open_confined("/", relp, O_RDONLY);
+-			} else
+-				fd = sender_open_confined(NULL, fname, O_RDONLY);
++			int matched;
++			/* A files-from entry follows only trusted-owned ancestors because
++			 * its source base is operator-selected but the entry itself may not
++			 * be. Other paths stay confined beneath their explicit transfer root.
++			 * Every file leaf remains O_NOFOLLOW. */
++			if (files_from) {
++				fd = do_open_checklinks(fname);
++			} else {
++				fd = open_sender_source_path(fname, O_RDONLY | O_NOFOLLOW, &matched);
++				if (!matched) {
++					if (fname[0] == '/') {
++						/* --relative keeps the full absolute path as fname;
++						 * anchor at "/" and pass the resolver a relative path. */
++						const char *relp = fname;
++						while (*relp == '/')
++							relp++;
++						fd = sender_open_confined("/", relp, O_RDONLY);
++					} else
++						fd = sender_open_confined(NULL, fname, O_RDONLY);
++				}
++			}
+ 		} else {
+ 			fd = do_open_checklinks(fname);
+ 		}
+@@ -809,6 +814,7 @@ void send_files(int f_in, int f_out)
+ 	if (DEBUG_GTE(SEND, 1))
+ 		rprintf(FINFO, "send files finished\n");
+ 
++	clear_sender_source_roots();
+ 	match_report();
+ 
+ 	write_ndx(f_out, NDX_DONE);
+diff --git a/syscall.c b/syscall.c
+index 1553f4716..8e96bebe4 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -62,6 +62,7 @@ extern int preserve_executability;
+ extern int open_noatime;
+ extern int copy_links;
+ extern int copy_unsafe_links;
++extern int copy_dirlinks;
+ extern int am_daemon;
+ extern int am_chrooted;
+ extern int insecure_links;
+@@ -69,10 +70,12 @@ extern int module_id;
+ extern unsigned int module_dirlen;
+ extern char *module_dir;
+ extern int module_dirfd;	/* daemon: served module root pinned by identity, or -1 */
++extern char *files_from;
+ extern char *confine_root;	/* --confine-root, or NULL; see confinement_root() */
+ extern unsigned int confine_rootlen;
+ extern char curr_dir[MAXPATHLEN];	/* defined below; fwd-declared for the seed */
+ extern int operator_path_resolve;	/* defined below; fwd-declared for the exclude check */
++extern int filesfrom_owner_walk_override;	/* defined below; used by files-from implied dirs */
+ 
+ /* A directory fd used only for pathname traversal, fchdir(), or as *at()
+  * authority does not need read permission on Linux.  Keep the portable
+@@ -96,7 +99,7 @@ static int directory_traverse_flags(void)
+  * and EACCESes when the module sits under a non-traversable parent (a 0700 home).
+  * Functionally identical (same inode), just privilege-drop-safe.  Gated like its
+  * callers (the secure resolver and dpc_dir_fd both require these three). */
+-static int open_anchor_dirfd(const char *path)
++int open_anchor_dirfd(const char *path)
+ {
+ 	if (module_dirfd >= 0 && am_daemon && module_dir && strcmp(path, module_dir) == 0)
+ 		return dup(module_dirfd);
+@@ -140,6 +143,16 @@ int symlink_optout_allowed(void)
+ 	return insecure_links;
+ }
+ 
++/* A files-from entry is peer-selected, even when its source base was supplied
++ * by the operator.  Keep its ownership walk inside --confine-root when one is
++ * active. */
++int filesfrom_owner_walk_active(void)
++{
++	return !am_daemon && am_sender && files_from
++	    && !copy_unsafe_links && !copy_dirlinks && !insecure_links
++	    && (!copy_links || filesfrom_owner_walk_override);
++}
++
+ /* The root an operator/peer-supplied path must stay under, or NULL when nothing
+  * is confined.  A daemon has the served module; a server launched by a wrapper
+  * with its own restricted directory (rrsync) gets one from --confine-root.
+@@ -218,25 +231,29 @@ static int is_exact_fd_pin(const char *p)
+ 
+ /* Refuse (return 1) when the ABSOLUTE resolved path `abspath` lands OUTSIDE the
+  * confinement root, for an operator/peer-supplied path that must stay inside it
+- * (--partial-dir/--backup-dir/alt-basis/merge files: operator_path_resolve).  An
++ * (--partial-dir/--backup-dir/alt-basis/merge files or files-from entries).  An
+  * in-tree symlink owned by uid 0 / the euid is followed by design, so it can
+  * redirect the resolved target outside the root; this catches that escape.
++ * `final` distinguishes a completed target from an ancestor crossed on the way
++ * to it.
+  *
+  * This is ROOT confinement only.  The daemon exclude/filter list is a name-based
+  * visibility filter, NOT a physical-path boundary: a symlink whose own name is
+  * not excluded may still resolve into an excluded IN-tree subtree, exactly as in
+  * stock rsync.  The defense for a writable module is `munge symlinks` (see
+  * rsyncd.conf(5)), not this walk. */
+-static int abspath_outside_confinement(const char *abspath)
++static int abspath_outside_confinement(const char *abspath, int final)
+ {
+ 	unsigned int rootlen;
+ 	const char *root = confinement_root(&rootlen);
+ 	char pinned[MAXPATHLEN];
++	int enforce;
+ 
+ 	if (!root || !abspath)
+ 		return 0;
+ 	if (rootlen <= 1)			/* root is "/": nothing is outside */
+ 		return 0;
++	enforce = operator_path_resolve || filesfrom_owner_walk_active();
+ 	/* An fd pin (rrsync rewrites a validated option path to /proc/self/fd/N so
+ 	 * no later symlink can redirect it) is spelled outside the root by
+ 	 * construction.  Judge it by what it points AT rather than by its spelling,
+@@ -250,7 +267,7 @@ static int abspath_outside_confinement(const char *abspath)
+ 		if (is_exact_fd_pin(abspath)) {
+ 			ssize_t n = readlink(abspath, pinned, sizeof pinned - 1);
+ 			if (n <= 0 || pinned[0] != '/')
+-				return operator_path_resolve ? 1 : 0;
++				return enforce ? 1 : 0;
+ 			pinned[n] = '\0';
+ 			abspath = pinned;
+ 		}
+@@ -262,14 +279,43 @@ static int abspath_outside_confinement(const char *abspath)
+ 	 * ("/", "/home", ...) on the way down -- those are not "outside", just
+ 	 * not-yet-arrived, so allow them.  A path that has truly DIVERGED is
+ 	 * outside: refuse it for an operator/peer path that must stay in the tree
+-	 * (operator_path_resolve); other opens (--log-file, --*-from, lock/motd)
++	 * (operator_path_resolve or filesfrom_owner_walk_active()); other opens
++	 * (--log-file, --*-from, lock/motd)
+ 	 * may legitimately live elsewhere.  The --insecure-links / "insecure links
+ 	 * = yes" opt-out short-circuits before we get here. */
+ 	size_t alen = strlen(abspath);
+ 	if (alen == 0
+ 	 || (strncmp(abspath, root, alen) == 0 && root[alen] == '/'))
+-		return 0;			/* ancestor of the root: still descending */
+-	return operator_path_resolve ? 1 : 0;
++		return enforce && final ? 1 : 0;	/* an ancestor is valid only while descending */
++	return enforce ? 1 : 0;
++}
++
++/* Check a completed path made from a tracked directory and one leaf. */
++static int check_abspath_leaf(const char *base, const char *leaf)
++{
++	char leafabs[MAXPATHLEN];
++	size_t baselen;
++	int n;
++
++	if (!base || !*base) {
++		if (abspath_outside_confinement(base, 1)) {
++			errno = ELOOP;
++			return -1;
++		}
++		return 0;
++	}
++	baselen = strlen(base);
++	n = snprintf(leafabs, sizeof leafabs, "%s%s%s", base,
++		     base[baselen - 1] == '/' ? "" : "/", leaf);
++	if (n < 0 || (size_t)n >= sizeof leafabs) {
++		errno = ENAMETOOLONG;
++		return -1;
++	}
++	if (abspath_outside_confinement(leafabs, 1)) {
++		errno = ELOOP;
++		return -1;
++	}
++	return 0;
+ }
+ 
+ /* Advance the tracked absolute path `abspath` by one resolved component,
+@@ -427,7 +473,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 					saved_errno = errno;
+ 					goto out;
+ 				}
+-				if (!pin_transit && abspath_outside_confinement(abspath)) {
++				if (!pin_transit && abspath_outside_confinement(abspath, 1)) {
+ 					saved_errno = ELOOP;
+ 					goto out;
+ 				}
+@@ -549,7 +595,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 				saved_errno = errno;
+ 				goto out;
+ 			}
+-			if (!pin_transit && abspath_outside_confinement(abspath)) {
++			if (!pin_transit && abspath_outside_confinement(abspath, 1)) {
+ 				saved_errno = ELOOP;
+ 				goto out;
+ 			}
+@@ -560,7 +606,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 			if (retfd >= 0 && out_abs && out_cap)
+ 				/* Root-resolved (".." popped abspath empty) tracked daemon walk:
+ 				 * hand back "/" so owner_walk_parent still leaf-checks (path=/ bypass). */
+-				strlcpy(out_abs, (am_daemon && !abspath[0]) ? "/" : abspath, out_cap);
++				strlcpy(out_abs, !abspath[0] ? "/" : abspath, out_cap);
+ 			goto out;
+ 		}
+ 
+@@ -573,7 +619,7 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 			saved_errno = errno;
+ 			goto out;
+ 		}
+-		if (!pin_transit && abspath_outside_confinement(abspath)) {
++		if (!pin_transit && abspath_outside_confinement(abspath, 0)) {
+ 			saved_errno = ELOOP;
+ 			goto out;
+ 		}
+@@ -601,12 +647,16 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 	 * an O_PATH fd is sufficient for traversal and fchdir but not operations
+ 	 * such as fchmod. */
+ 	if (flags & O_DIRECTORY) {
++		if (!pin_transit && abspath_outside_confinement(abspath, 1)) {
++			saved_errno = ELOOP;
++			goto out;
++		}
+ 		retfd = openat(dfd, ".", flags | O_NOFOLLOW, mode);
+ 		saved_errno = retfd < 0 ? errno : 0;
+ 		if (out_abs && out_cap)
+ 			/* Root-resolved (".." popped abspath empty) tracked daemon walk:
+ 			 * hand back "/" so owner_walk_parent still leaf-checks (path=/ bypass). */
+-			strlcpy(out_abs, (am_daemon && !abspath[0]) ? "/" : abspath, out_cap);
++			strlcpy(out_abs, !abspath[0] ? "/" : abspath, out_cap);
+ 	} else {
+ 		saved_errno = EISDIR;
+ 	}
+@@ -645,6 +695,7 @@ int open_no_attacker_symlinks_dirfd(const char *path)
+  * relevant ops by backup.c et al.; the opt-out (--insecure-links / "insecure
+  * links =") restores legacy following.  Default 0 (transfer-path resolver). */
+ int operator_path_resolve = 0;
++int filesfrom_owner_walk_override = 0;
+ 
+ #if defined AT_FDCWD && defined O_NOFOLLOW && defined O_DIRECTORY
+ /* For an operator-supplied path: open its parent directory via the ownership
+@@ -678,15 +729,8 @@ int owner_walk_parent(const char *path, const char **bname)
+ 	 * module in an otherwise-served dir.  (The module exclude/filter is name-
+ 	 * based and not enforced here -- see abspath_outside_confinement.) */
+ 	if (pabs[0]) {
+-		char leafabs[MAXPATHLEN];
+-		if (snprintf(leafabs, sizeof leafabs, "%s/%s", pabs, *bname) >= (int)sizeof leafabs) {
+-			close(dfd);
+-			errno = ENAMETOOLONG;	/* fail closed, never skip the check */
+-			return -1;
+-		}
+-		if (abspath_outside_confinement(leafabs)) {
++		if (check_abspath_leaf(pabs, *bname) < 0) {
+ 			close(dfd);
+-			errno = ELOOP;
+ 			return -1;
+ 		}
+ 	}
+@@ -2913,12 +2957,14 @@ static int ds_path_push(struct dirstack *ds, const char *comp)
+ 	if (al == 0)
+ 		return 0;		/* unseeded: tracking disabled for this walk */
+ 	size_t cl = strlen(comp);
+-	if (al + 1 + cl >= sizeof ds->abspath) {
++	size_t off = (al > 0 && ds->abspath[al - 1] == '/') ? al : al + 1;
++	if (off + cl >= sizeof ds->abspath) {
+ 		errno = ENAMETOOLONG;
+ 		return -1;
+ 	}
+-	ds->abspath[al] = '/';
+-	memcpy(ds->abspath + al + 1, comp, cl + 1);
++	if (off != al)
++		ds->abspath[al] = '/';
++	memcpy(ds->abspath + off, comp, cl + 1);
+ 	return 0;
+ }
+ 
+@@ -3005,7 +3051,7 @@ static int ds_descend(struct dirstack *ds, const char *part, int *hops)
+ 			return -1;
+ 		/* exclude-aware: refuse descending into a module-hidden dir (catches a
+ 		 * symlink that redirected the walk into an excluded subtree). */
+-		if (abspath_outside_confinement(ds->abspath)) {
++		if (abspath_outside_confinement(ds->abspath, 0)) {
+ 			errno = ELOOP;
+ 			return -1;
+ 		}
+@@ -3119,7 +3165,10 @@ static int secure_walk_at(int anchor_fd, const char *anchor_abspath,
+ 			if (ds_descend(&ds, part, hops) < 0)
+ 				goto cleanup;
+ 			if (is_last) {
+-				if (flags & O_DIRECTORY)
++				if ((flags & O_DIRECTORY)
++				 && abspath_outside_confinement(ds.abspath, 1))
++					errno = ELOOP;
++				else if (flags & O_DIRECTORY)
+ 					retfd = openat(ds_cur(&ds), ".", flags | O_NOFOLLOW, mode);
+ 				else
+ 					errno = EISDIR;
+@@ -3131,15 +3180,8 @@ static int secure_walk_at(int anchor_fd, const char *anchor_abspath,
+ 		/* File leaf (final component, caller did not ask for O_DIRECTORY):
+ 		 * never follow a symlink leaf. */
+ 		if (is_last && !(flags & O_DIRECTORY)) {
+-			if (ds.abspath[0]) {
+-				char leafabs[MAXPATHLEN];
+-				if (snprintf(leafabs, sizeof leafabs, "%s/%s", ds.abspath, part)
+-				      < (int)sizeof leafabs
+-				 && abspath_outside_confinement(leafabs)) {
+-					errno = ELOOP;
+-					goto cleanup;
+-				}
+-			}
++			if (check_abspath_leaf(ds.abspath, part) < 0)
++				goto cleanup;
+ 			int next_fd = openat(ds_cur(&ds), part,
+ 					     directory_traverse_flags() | O_NOFOLLOW);
+ 			if (next_fd == -1 && (errno == ENOTDIR || errno == ENOENT)) {
+@@ -3155,6 +3197,8 @@ static int secure_walk_at(int anchor_fd, const char *anchor_abspath,
+ 
+ 		/* O_DIRECTORY|O_NOFOLLOW leaf: the caller's O_NOFOLLOW governs the leaf. */
+ 		if (is_last && (flags & O_NOFOLLOW)) {
++			if (check_abspath_leaf(ds.abspath, part) < 0)
++				goto cleanup;
+ 			retfd = openat(ds_cur(&ds), part, flags | O_NOFOLLOW, mode);
+ 			goto cleanup;
+ 		}
+@@ -3167,6 +3211,10 @@ static int secure_walk_at(int anchor_fd, const char *anchor_abspath,
+ 			goto cleanup;
+ 		}
+ 		if (is_last) {
++			if (abspath_outside_confinement(ds.abspath, 1)) {
++				errno = ELOOP;
++				goto cleanup;
++			}
+ 			retfd = openat(ds_cur(&ds), ".", flags | O_NOFOLLOW, mode);
+ 			goto cleanup;
+ 		}
+@@ -3176,7 +3224,10 @@ static int secure_walk_at(int anchor_fd, const char *anchor_abspath,
+ 	 * access, else EISDIR.  An AT_FDCWD anchor is not a resolvable target, so it
+ 	 * fails rather than silently returning the cwd. */
+ 	if (!saw_component) {
+-		if ((flags & O_DIRECTORY) && anchor_fd != AT_FDCWD)
++		if ((flags & O_DIRECTORY)
++		 && abspath_outside_confinement(ds.abspath, 1))
++			errno = ELOOP;
++		else if ((flags & O_DIRECTORY) && anchor_fd != AT_FDCWD)
+ 			retfd = openat(anchor_fd, ".", flags | O_NOFOLLOW, mode);
+ 		else
+ 			errno = EISDIR;
+@@ -3568,6 +3619,26 @@ int do_open_checklinks(const char *pathname)
+ 	if (copy_links || copy_unsafe_links) {
+ 		return do_open(pathname, O_RDONLY, 0);
+ 	}
++#if defined AT_FDCWD && defined O_NOFOLLOW && defined O_DIRECTORY
++	if (am_sender && !am_daemon && files_from
++	 && !copy_dirlinks && !symlink_optout_allowed()) {
++		const char *bname;
++		int dfd, fd, save_errno, open_flags = O_RDONLY | O_NOFOLLOW;
++
++		dfd = owner_walk_parent(pathname, &bname);
++		if (dfd < 0)
++			return -1;
++#ifdef O_NOATIME
++		if (open_noatime)
++			open_flags |= O_NOATIME;
++#endif
++		fd = openat(dfd, bname, open_flags, 0);
++		save_errno = fd < 0 ? errno : 0;
++		close(dfd);
++		errno = save_errno;
++		return fd;
++	}
++#endif
+ 	return do_open_nofollow(pathname, O_RDONLY);
+ }
+ 
+diff --git a/t_secure_relpath.c b/t_secure_relpath.c
+index d20570d61..184acef67 100644
+--- a/t_secure_relpath.c
++++ b/t_secure_relpath.c
+@@ -224,7 +224,6 @@ int main(int argc, char **argv)
+ 	 * literal '..'.  Its dedicated fd-anchored entry point must preserve an
+ 	 * in-tree climb while refusing to pop above the anchor. */
+ 	check_beneath_dotdot();
+-
+ 	if (errs)
+ 		fprintf(stderr, "\n%d failure(s)\n", errs);
+ 	return errs ? 1 : 0;
+diff --git a/t_stub.c b/t_stub.c
+index 1518c7932..c5a39bfab 100644
+--- a/t_stub.c
++++ b/t_stub.c
+@@ -26,6 +26,7 @@ int inplace = 0;
+ int am_daemon = 0;
+ int am_chrooted = 0;
+ int insecure_links = 0;
++int copy_dirlinks = 0;
+ int modify_window = 0;
+ int preallocate_files = 0;
+ int sparse_files = 0;
+@@ -45,6 +46,7 @@ size_t max_alloc = (size_t)-1; /* test helpers are not memory-constrained;
+ 				* per-component fallback of secure_relative_open()
+ 				* hits at its first my_strdup() call. */
+ char *partial_dir;
++char *files_from;
+ char *module_dir;
+ int module_dirfd = -1;
+ char *confine_root;
+diff --git a/testsuite/relative-source-ancestor_test.py b/testsuite/relative-source-ancestor_test.py
+new file mode 100644
+index 000000000..3864ededc
+--- /dev/null
++++ b/testsuite/relative-source-ancestor_test.py
+@@ -0,0 +1,296 @@
++#!/usr/bin/env python3
++"""Explicit source directory symlinks remain transfer roots."""
++
++import os
++import pwd
++import subprocess
++
++from rsyncfns import SCRATCHDIR, rsync_argv, test_fail
++
++real = SCRATCHDIR / 'real'
++source = real / 'My_Documents'
++source.mkdir(parents=True)
++(source / 'marker').write_text('source contents\n')
++absolute_link = SCRATCHDIR / 'home'
++relative_link = SCRATCHDIR / 'relative-home'
++os.symlink(str(real), absolute_link)
++os.symlink(str(real), relative_link)
++
++cases = (
++    (('-r',), False),
++    (('-rR',), True),
++    (('-rR', '--no-inc-recursive'), True),
++)
++
++for link_name, link, cwd in (
++    ('absolute', absolute_link, None),
++    ('relative', relative_link, SCRATCHDIR),
++):
++    source_arg = (str(SCRATCHDIR) + '/./home/My_Documents/' if cwd is None
++                  else 'relative-home/My_Documents/')
++    for index, (options, relative) in enumerate(cases):
++        dest = SCRATCHDIR / f'dest-{link_name}-descendant-{index}'
++        dest.mkdir()
++        proc = subprocess.run(
++            rsync_argv(*options, source_arg, str(dest) + '/'),
++            cwd=cwd, capture_output=True, text=True,
++        )
++        if proc.returncode:
++            test_fail(f'{link_name} descendant source transfer with {options} '
++                      f'failed: {proc.stdout}{proc.stderr}')
++        expected = (dest / link.name / 'My_Documents' / 'marker' if relative
++                    else dest / 'marker')
++        if not expected.is_file() or expected.read_text() != 'source contents\n':
++            test_fail('relative source layout or contents changed')
++
++file_sources = (
++    ('absolute-file', str(absolute_link / 'My_Documents' / 'marker'), None),
++    ('relative-file', 'relative-home/My_Documents/marker', SCRATCHDIR),
++)
++for name, source_arg, cwd in file_sources:
++    dest = SCRATCHDIR / f'dest-{name}'
++    dest.mkdir()
++    proc = subprocess.run(
++        rsync_argv('-R', source_arg, str(dest) + '/'),
++        cwd=cwd, capture_output=True, text=True,
++    )
++    if proc.returncode:
++        test_fail(f'{name} transfer failed: {proc.stdout}{proc.stderr}')
++    if cwd is None:
++        expected = dest / str(absolute_link.relative_to('/')) / 'My_Documents' / 'marker'
++    else:
++        expected = dest / source_arg
++    if not expected.is_file() or expected.read_text() != 'source contents\n':
++        test_fail(f'{name} layout or contents changed')
++
++files_from = SCRATCHDIR / 'files-from'
++files_from.write_text('relative-home/My_Documents/marker\n')
++dest = SCRATCHDIR / 'dest-files-from'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', f'--files-from={files_from}',
++               str(SCRATCHDIR) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++expected = dest / 'relative-home' / 'My_Documents' / 'marker'
++if proc.returncode or not expected.is_file() or expected.read_text() != 'source contents\n':
++    test_fail(f'files-from trusted ancestor transfer failed: '
++              f'{proc.stdout}{proc.stderr}')
++
++files_from.write_text('relative-home/My_Documents/\n')
++dest = SCRATCHDIR / 'dest-files-from-dir'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', f'--files-from={files_from}',
++               str(SCRATCHDIR) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++expected = dest / 'relative-home' / 'My_Documents' / 'marker'
++if proc.returncode or not expected.is_file() or expected.read_text() != 'source contents\n':
++    test_fail(f'files-from trusted directory transfer failed: '
++              f'{proc.stdout}{proc.stderr}')
++
++remove_source = real / 'remove-marker'
++remove_source.write_text('remove contents\n')
++files_from.write_text('relative-home/remove-marker\n')
++dest = SCRATCHDIR / 'dest-files-from-remove'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', '--remove-source-files', f'--files-from={files_from}',
++               str(SCRATCHDIR) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++expected = dest / 'relative-home' / 'remove-marker'
++if proc.returncode or remove_source.exists() or not expected.is_file():
++    test_fail(f'files-from remove-source-files failed: '
++              f'{proc.stdout}{proc.stderr}')
++
++confined_root = SCRATCHDIR / 'confined-root'
++confined_root.mkdir()
++confined_outside = SCRATCHDIR / 'confined-outside'
++confined_outside.mkdir()
++(confined_outside / 'marker').write_text('outside contents\n')
++os.symlink(str(confined_outside), confined_root / 'outside-link')
++confined_inside = confined_root / 'inside'
++confined_inside.mkdir()
++(confined_inside / 'marker').write_text('inside contents\n')
++os.symlink(str(confined_inside), confined_root / 'inside-link')
++confined_files_from = confined_root / 'files-from'
++
++confined_files_from.write_text('inside-link/marker\n')
++dest = confined_root / 'confined-inside-dest'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', f'--confine-root={confined_root}',
++               f'--files-from={confined_files_from}',
++               str(confined_root) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++expected = dest / 'inside-link' / 'marker'
++if proc.returncode or not expected.is_file() or expected.read_text() != 'inside contents\n':
++    test_fail(f'files-from trusted in-root link failed under confinement: '
++              f'{proc.stdout}{proc.stderr}')
++
++confined_files_from.write_text('outside-link/marker\n')
++dest = confined_root / 'confined-outside-dest'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', f'--confine-root={confined_root}',
++               f'--files-from={confined_files_from}',
++               str(confined_root) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++escaped = dest / 'outside-link' / 'marker'
++if proc.returncode == 0 or escaped.exists():
++    test_fail(f'files-from followed a trusted link outside --confine-root: '
++              f'{proc.stdout}{proc.stderr}')
++
++confined_files_from.write_text('outside-link/\n')
++dest = confined_root / 'confined-outside-dir-dest'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', f'--confine-root={confined_root}',
++               f'--files-from={confined_files_from}',
++               str(confined_root) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++escaped = dest / 'outside-link' / 'marker'
++if proc.returncode == 0 or escaped.exists():
++    test_fail(f'files-from enumerated a trusted link outside --confine-root: '
++              f'{proc.stdout}{proc.stderr}')
++
++os.symlink(str(confined_root.parent), confined_root / 'ancestor-link')
++confined_files_from.write_text('ancestor-link/\n')
++dest = confined_root / 'confined-ancestor-dest'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-d', f'--confine-root={confined_root}',
++               f'--files-from={confined_files_from}',
++               str(confined_root) + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++if proc.returncode == 0 or (dest / 'ancestor-link').exists():
++    test_fail(f'files-from accepted a trusted ancestor of --confine-root: '
++              f'{proc.stdout}{proc.stderr}')
++
++root_real = SCRATCHDIR / 'root-real'
++root_real.mkdir()
++(root_real / 'marker').write_text('source contents\n')
++absolute_root_link = SCRATCHDIR / 'root-home'
++relative_root_link = SCRATCHDIR / 'relative-root-home'
++os.symlink(str(root_real), absolute_root_link)
++os.symlink(str(root_real), relative_root_link)
++
++for link_name, link, cwd in (
++    ('absolute', absolute_root_link, None),
++    ('relative', relative_root_link, SCRATCHDIR),
++):
++    source_arg = (str(SCRATCHDIR) + '/./root-home/' if cwd is None
++                  else 'relative-root-home/')
++    for index, (options, relative) in enumerate(cases):
++        dest = SCRATCHDIR / f'dest-{link_name}-root-{index}'
++        dest.mkdir()
++        proc = subprocess.run(
++            rsync_argv(*options, source_arg, str(dest) + '/'),
++            cwd=cwd, capture_output=True, text=True,
++        )
++        if proc.returncode:
++            test_fail(f'{link_name} root source transfer with {options} failed: '
++                      f'{proc.stdout}{proc.stderr}')
++        expected = dest / link.name / 'marker' if relative else dest / 'marker'
++        if not expected.is_file() or expected.read_text() != 'source contents\n':
++            test_fail('explicit source-root layout or contents changed')
++
++if os.geteuid() == 0:
++    untrusted_uid = next((entry.pw_uid for entry in pwd.getpwall()
++                          if entry.pw_uid != 0), None)
++    if untrusted_uid is not None:
++        untrusted_link = SCRATCHDIR / 'untrusted-home'
++        os.symlink(str(real), untrusted_link)
++        os.lchown(untrusted_link, untrusted_uid, -1)
++        source_arg = str(SCRATCHDIR) + '/./untrusted-home/'
++        for index, (options, relative) in enumerate(cases[:2]):
++            dest = SCRATCHDIR / f'untrusted-dest-{index}'
++            dest.mkdir()
++            proc = subprocess.run(
++                rsync_argv(*options, source_arg, str(dest) + '/'),
++                capture_output=True, text=True,
++            )
++            expected = dest / 'My_Documents' / 'marker'
++            if relative:
++                expected = dest / 'untrusted-home' / 'My_Documents' / 'marker'
++            if proc.returncode or not expected.is_file():
++                test_fail(f'explicit untrusted-owned source link with {options} '
++                          f'failed: {proc.stdout}{proc.stderr}')
++
++        dest = SCRATCHDIR / 'untrusted-file-dest'
++        dest.mkdir()
++        source_arg = str(untrusted_link / 'My_Documents' / 'marker')
++        proc = subprocess.run(
++            rsync_argv('-R', source_arg, str(dest) + '/'),
++            capture_output=True, text=True,
++        )
++        expected = dest / str(untrusted_link.relative_to('/')) / 'My_Documents' / 'marker'
++        if proc.returncode or not expected.is_file():
++            test_fail(f'explicit untrusted-owned file path failed: '
++                      f'{proc.stdout}{proc.stderr}')
++
++        files_from.write_text('untrusted-home/My_Documents/marker\n')
++        dest = SCRATCHDIR / 'untrusted-files-from-dest'
++        dest.mkdir()
++        proc = subprocess.run(
++            rsync_argv('-r', f'--files-from={files_from}',
++                       str(SCRATCHDIR) + '/', str(dest) + '/'),
++            capture_output=True, text=True,
++        )
++        escaped = dest / 'untrusted-home' / 'My_Documents' / 'marker'
++        if proc.returncode == 0 or escaped.exists():
++            test_fail('files-from followed an untrusted-owned ancestor symlink')
++
++        files_from.write_text('untrusted-home/My_Documents/\n')
++        dest = SCRATCHDIR / 'untrusted-files-from-dir-dest'
++        dest.mkdir()
++        proc = subprocess.run(
++            rsync_argv('-r', f'--files-from={files_from}',
++                       str(SCRATCHDIR) + '/', str(dest) + '/'),
++            capture_output=True, text=True,
++        )
++        escaped = dest / 'untrusted-home' / 'My_Documents' / 'marker'
++        if proc.returncode == 0 or escaped.exists():
++            test_fail('files-from enumerated an untrusted-owned ancestor symlink')
++
++        files_from.write_text('untrusted-home/\n')
++        dest = SCRATCHDIR / 'untrusted-files-from-leaf-dir-dest'
++        dest.mkdir()
++        proc = subprocess.run(
++            rsync_argv('-r', f'--files-from={files_from}',
++                       str(SCRATCHDIR) + '/', str(dest) + '/'),
++            capture_output=True, text=True,
++        )
++        escaped = dest / 'untrusted-home' / 'marker'
++        if proc.returncode == 0 or escaped.exists():
++            test_fail('files-from followed an untrusted-owned directory link')
++
++        files_from.write_text('untrusted-home/My_Documents/marker\n')
++        dest = SCRATCHDIR / 'insecure-files-from-dest'
++        dest.mkdir()
++        proc = subprocess.run(
++            rsync_argv('-r', '--insecure-links', f'--files-from={files_from}',
++                       str(SCRATCHDIR) + '/', str(dest) + '/'),
++            capture_output=True, text=True,
++        )
++        expected = dest / 'untrusted-home' / 'My_Documents' / 'marker'
++        if proc.returncode or not expected.is_file():
++            test_fail(f'files-from insecure-links opt-out failed: '
++                      f'{proc.stdout}{proc.stderr}')
++
++dest = SCRATCHDIR / 'remove-dest'
++dest.mkdir()
++proc = subprocess.run(
++    rsync_argv('-r', '--remove-source-files', str(absolute_link / 'My_Documents') + '/', str(dest) + '/'),
++    capture_output=True, text=True,
++)
++expected = dest / 'marker'
++if proc.returncode or (source / 'marker').exists() or not expected.is_file():
++    test_fail(f'remove-source-files failed: {proc.stdout}{proc.stderr}')
++(source / 'marker').write_text('source contents\n')

@@ -1,3 +1,117 @@
+rsync (3.5.0+ds1-0+pexip25u1+deb13u1) pexip-trixie; urgency=medium
+
+  * New upstream release with security updates
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Mon, 05 Oct 2026 11:43:56 +0100
+
+rsync (3.5.0+ds1-0+deb13u1) trixie-security; urgency=medium
+
+  * New upstream release, pull the same upstream patches applied in Debian
+    Unstable, fixing 33 CVEs;
+    - CVE-2026-53783: rrsync restricted-directory escape
+      (validation-vs-exec race + unsafe option allowlist)
+    - CVE-2026-53784: Daemon module-root chdir escape under "use chroot =
+      no"
+    - CVE-2026-53785: --relative implied-parent creation escapes the
+      destination tree
+    - CVE-2026-53786: Daemon --filter merge file bypasses the module filter
+      list
+    - CVE-2026-53788: Daemon name-converter accepts newline-bearing names
+      into its line protocol
+    - CVE-2026-53789: Malicious sender expands --delete scope by
+      reclassifying an implied parent
+    - CVE-2026-53790: Command / argument injection via unquoted peer- or
+      host-controlled values
+    - CVE-2026-53791: PROXY-protocol mode lets a direct client spoof the
+      daemon's source address
+    - CVE-2026-53792: Receiver-supplied zero checksum block length drives
+      sender matching negative
+    - CVE-2026-53793: Chroot "/./" inner-module escape via a
+      parent-component symlink
+    - CVE-2026-53794: Remote peer disables the per-allocation sanity cap
+      via --max-alloc=0
+    - CVE-2026-53795: Receiver write escape via an absolute --temp-dir /
+      --link-dest disabling rename/link confinement
+    - CVE-2026-53796: Non-daemon receiver destination-chdir symlink race
+      (TOCTOU)
+    - CVE-2026-53797: Sender source-tree parent-component symlink race ->
+      out-of-tree disclosure
+    - CVE-2026-53798: Daemon name-converter empty response maps an unknown
+      name to uid/gid 0
+    - CVE-2026-53799: Receiver ACL/xattr application follows a symlink-race
+      -> arbitrary ACL set (local privilege escalation)
+    - CVE-2026-53800: Sender --remove-source-files unlink follows a
+      parent-component symlink race -> arbitrary file deletion outside the
+      source tree
+    - CVE-2026-53801: Sender/daemon directory-scan enumeration escapes the
+      transfer root / module -> out-of-tree disclosure
+    - CVE-2026-53802: Arbitrary file read / transfer-shaping via symlinked
+      operator-supplied input files
+    - CVE-2026-53803: Arbitrary file write / privilege escalation via
+      symlinked operator-supplied output paths
+    - CVE-2026-70452: `hosts deny` fails OPEN when a configured hostname
+      cannot be resolved, admitting the host it was meant to block
+    - CVE-2026-70453: Quadratic CPU exhaustion in hash_search() from a
+      crafted equal-weak-checksum chain
+    - CVE-2026-70454: rsync-ssl establishes an unauthenticated TLS
+      connection (no CA verification; no stunnel hostname binding)
+    - CVE-2026-70455: Peer-controlled Zstandard worker exhaustion on an
+      rsync daemon
+    - CVE-2026-70456: Remote out-of-bounds heap write in read_args() when
+      the argument count lands exactly on maxargs
+    - CVE-2026-70457: Attacker-chosen-offset write in parse_size_arg()
+      error formatting
+    - CVE-2026-70458: Out-of-bounds write from a FLAG_HLINKED file entry
+      accepted without -H
+    - CVE-2026-70459: Per-connection daemon child crash from a crafted
+      first incremental file list with a non-directory transfer root
+    - CVE-2026-70460: Daemon module-root escape through a peer-supplied
+      --partial-dir / --backup-dir resolving via an in-module symlink
+    - CVE-2026-70461: Peer-driven one-byte heap out-of-bounds write in
+      add_implied_include()
+    - CVE-2026-70462: Peer-supplied MSG_IO_TIMEOUT defeats the client's own
+      I/O timeout (signed overflow, and a non-positive value)
+    - CVE-2026-70463: "auth users" ignores documented comma-only parsing,
+      silently skipping a deny/read-only rule
+    - CVE-2026-70464: Unauthenticated pre-transfer handshake DoS locks out
+      an rsync daemon module
+  * d/rsync.NEWS: Add a notice explaining the reasoning behind the version
+    bump in Stable.
+  * Pull six more patches from 3.5.1 to address regressions from 3.5.0:
+    - syscall_use_O_PATH_for_directory..., syscall_use_O_PATH_for_held...:
+      Fix the regression where a path through a directory that can be
+      searched but not read (mode 0711 or 0111) failed with "Permission
+      denied".
+    - rrsync_restore_restricted-root...: Fix the regression where rrsync
+      refused "/" and resolved option paths such as --link-dest=/previous
+      relative to the destination, so backups silently became full copies
+      instead of hard links
+    - options_c_Fix_files-from_confinement...: Stop refusing a --files-from
+      list outside --confine-root for local and remote-shell transfers
+    - syscall_follow_trusted_sender...: Fix the regression where a
+      --relative or --files-from source whose path goes through a symlink
+      failed with "Too many levels of symbolic links"
+    - receiver_c_Tighten_alt-dest...: Stop following a symlink as the
+      --link-dest/--copy-dest/--compare-dest basis file, which let a
+      malicious sender make the receiver copy the symlink's target into the
+      destination
+  * d/patches: Remove leftover patches from the 3.4.1 series, all of them
+    applied upstream in 3.5.0
+
+   [ Arnaud Rebillout ]
+   * d/control: Switch back to python3-cmarkgfm for all architectures
+
+   [ Alexandre Detiste ]
+   * delete d/rules-pre-dh that shows up on Debian Code Search
+   * d/copyright: runtests.sh was refactored to runtests.py
+   * d/t/upstream-tests: runtests.sh was refactored to runtests.py
+
+   [ Sylvain Beucler ]
+   * autopkgtest improvements
+   * Drop allow-stderr autopkgtest restriction
+
+ -- Samuel Henrique <samueloph@debian.org>  Tue, 15 Sep 2026 18:46:30 -0700
+
 rsync (3.4.1+ds1-5+pexip25u6+deb13u4) pexip-trixie; urgency=medium
 
   * New upstream release
@@ -12,12 +126,6 @@ rsync (3.4.1+ds1-5+deb13u4) trixie; urgency=medium
     (CVE-2026-45232).
 
  -- Aquila Macedo Costa <aquila@debian.org>  Mon, 01 Jun 2026 14:03:48 -0400
-
-rsync (3.4.1+ds1-5+pexip25u5+deb13u3) pexip-trixie; urgency=medium
-
-  * New upstream release with security fixes
-
- -- Steve McIntyre <steve.mcintyre@pexip.com>  Tue, 26 May 2026 11:19:49 +0100
 
 rsync (3.4.1+ds1-5+deb13u3) trixie-security; urgency=high
 

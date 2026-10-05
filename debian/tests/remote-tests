@@ -6,6 +6,10 @@ HOMEDIR="$AUTOPKGTEST_TMP/home"
 adduser --home "$HOMEDIR" --disabled-password --gecos autopkgtest rsync
 mkdir -m 700 "$HOMEDIR/.ssh"
 
+if ! systemctl --quiet is-active ssh.service; then
+    systemctl start ssh.service
+fi
+
 ssh-keyscan localhost > "$HOMEDIR/.ssh/known_hosts" 2>/dev/null
 ssh-keygen -q -N '' -f "$HOMEDIR/.ssh/id_rsa"
 cp "$HOMEDIR/.ssh/id_rsa.pub" "$HOMEDIR/.ssh/authorized_keys"

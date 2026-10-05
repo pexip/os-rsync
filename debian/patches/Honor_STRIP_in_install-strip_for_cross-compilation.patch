@@ -1,0 +1,70 @@
+From a49f085a4fad61ba9dc4afc925a603888c4c3123 Mon Sep 17 00:00:00 2001
+From: Alessandro Di Nepi <alessandro.dinepi@gmail.com>
+Date: Sun, 16 Aug 2026 13:14:14 +0200
+Subject: [PATCH] Honor $(STRIP) in install-strip for cross-compilation (#1024)
+
+* Honor $(STRIP) in install-strip for cross-compilation
+
+The install-strip target hard-coded `install -s`, which strips via the
+install program using the build host's strip and ignores the STRIP
+variable. When cross-compiling this runs the host strip against a
+target binary and fails.
+
+Pass --strip-program=$(or $(STRIP),strip) so the target strip is used
+when STRIP is set (as cross toolchains and build systems provide),
+falling back to plain `strip` for native builds. A plain `make install`
+is unaffected.
+
+* Make install-strip portable (address review)
+
+- Detect the target strip via AC_CHECK_TOOL([STRIP],[strip],[strip]) in
+  configure.ac (picks up the cross-prefixed strip when cross-compiling,
+  defaults to plain strip otherwise) and substitute @STRIP@ in Makefile.in.
+- Rewrite install-strip to run a normal install then $(STRIP) on the
+  installed rsync binary, dropping the GNU Make $(or ...) and the GNU
+  install --strip-program extension that broke with install-sh/BSD install.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+---
+ Makefile.in  | 4 +++-
+ configure.ac | 1 +
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile.in b/Makefile.in
+index 801e8643e..716171db1 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -21,6 +21,7 @@ LIBOBJDIR=lib/
+ 
+ INSTALLCMD=@INSTALL@
+ INSTALLMAN=@INSTALL@
++STRIP=@STRIP@
+ 
+ srcdir=@srcdir@
+ MKDIR_P=@MKDIR_P@
+@@ -116,7 +117,8 @@ install-ssl-daemon: stunnel-rsyncd.conf
+ install-all: install install-ssl-daemon
+ 
+ install-strip:
+-	$(MAKE) INSTALL_STRIP='-s' install
++	$(MAKE) install
++	$(STRIP) $(DESTDIR)$(bindir)/rsync$(EXEEXT)
+ 
+ .PHONY: uninstall
+ uninstall:
+diff --git a/configure.ac b/configure.ac
+index 57cf2828d..2131bfef0 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -59,6 +59,7 @@ AC_PROG_CXX
+ AC_PROG_AWK
+ AC_PROG_EGREP
+ AC_PROG_INSTALL
++AC_CHECK_TOOL([STRIP], [strip], [strip])
+ AC_PROG_MKDIR_P
+ AC_SUBST(SHELL)
+ AC_PATH_PROG([PERL], [perl])

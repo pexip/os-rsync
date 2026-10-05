@@ -86,7 +86,28 @@ certificate to use for the connection.</p>
 
 <dt id="RSYNC_SSL_CA_CERT"><code>RSYNC_SSL_CA_CERT</code><a href="#RSYNC_SSL_CA_CERT" class="tgt"></a></dt><dd>
 <p>If specified, the value is a filename that contains a certificate authority
-certificate that is used to validate the connection.</p>
+certificate that is used to validate the connection.  When set, the server
+certificate is verified against this CA <strong>and</strong> its name is checked against
+the host you are connecting to (the chain and the identity), for all of the
+openssl, gnutls, and stunnel backends.  Set it to an empty string to disable
+certificate validation entirely (an encrypt-only connection).</p>
+</dd>
+
+<dt id="RSYNC_SSL_ALLOW_INSECURE_STUNNEL"><code>RSYNC_SSL_ALLOW_INSECURE_STUNNEL</code><a href="#RSYNC_SSL_ALLOW_INSECURE_STUNNEL" class="tgt"></a></dt><dd>
+<p>Set to <code>1</code> to allow the stunnel backend to run without a CA certificate (and
+thus with no server-certificate validation at all).  Without this, stunnel
+mode refuses to start unless <code>RSYNC_SSL_CA_CERT</code> is set, since an unvalidated
+TLS connection can be silently man-in-the-middled.</p>
+</dd>
+
+<dt id="RSYNC_SSL_SKIP_HOSTNAME_CHECK"><code>RSYNC_SSL_SKIP_HOSTNAME_CHECK</code><a href="#RSYNC_SSL_SKIP_HOSTNAME_CHECK" class="tgt"></a></dt><dd>
+<p>Set to <code>1</code> to verify the certificate <strong>chain</strong> but skip the <strong>hostname</strong>
+(identity) check, for the openssl and stunnel backends.  Use this only when
+the server certificate legitimately cannot match the host you connect to&nbsp;-&#8288;-&#8288;
+for example connecting by bare IP address, or to a server whose internal-CA
+certificate carries a different name.  The CA chain is still validated, so
+this is much narrower than disabling validation with an empty
+<code>RSYNC_SSL_CA_CERT</code>.</p>
 </dd>
 
 <dt id="RSYNC_SSL_OPENSSL"><code>RSYNC_SSL_OPENSSL</code><a href="#RSYNC_SSL_OPENSSL" class="tgt"></a></dt><dd>
@@ -140,7 +161,7 @@ exported RSYNC_SSL_TYPE environment variable to make its use the default.</p>
 <h2 id="BUGS">BUGS<a href="#BUGS" class="tgt"></a></h2>
 <p>Please report bugs! See the web site at <a href="https://rsync.samba.org/">https://rsync.samba.org/</a>.</p>
 <h2 id="VERSION">VERSION<a href="#VERSION" class="tgt"></a></h2>
-<p>This manpage is current for version 3.4.1 of rsync.</p>
+<p>This manpage is current for version 3.5.0 of rsync.</p>
 <h2 id="CREDITS">CREDITS<a href="#CREDITS" class="tgt"></a></h2>
 <p>Rsync is distributed under the GNU General Public License.  See the file
 <a href="COPYING">COPYING</a> for details.</p>
@@ -150,5 +171,5 @@ FAQ-O-Matic which may cover questions unanswered by this manual page.</p>
 <p>This manpage was written by Wayne Davison.</p>
 <p>Mailing lists for support and development are available at
 <a href="https://lists.samba.org/">https://lists.samba.org/</a>.</p>
-<div style="float: right"><p><i>15 Jan 2025</i></p></div>
+<div style="float: right"><p><i>13 Aug 2026</i></p></div>
 </body></html>

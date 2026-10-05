@@ -1,0 +1,233 @@
+From 324a1f0716aa75d311f879864f48408d5723d963 Mon Sep 17 00:00:00 2001
+From: Zen Dodd <mail@steadytao.com>
+Date: Sun, 16 Aug 2026 21:51:07 +1000
+Subject: [PATCH] rrsync: support fd pins in user namespaces (#1048)
+
+* rrsync: support fd pins in user namespaces
+* rrsync: support /dev/fd pins in user namespaces
+---
+ syscall.c                              |  26 +++--
+ testsuite/rrsync-userns-procfs_test.py | 133 +++++++++++++++++++++++++
+ testsuite/skiplist/cygwin.txt          |   1 +
+ testsuite/skiplist/macos.txt           |   1 +
+ 4 files changed, 153 insertions(+), 8 deletions(-)
+ create mode 100644 testsuite/rrsync-userns-procfs_test.py
+
+diff --git a/syscall.c b/syscall.c
+index 5e92edca0..68a7eea31 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -143,13 +143,18 @@ static const char *confinement_root(unsigned int *lenp)
+ 	return confine_root;
+ }
+ 
+-/* Split the "/proc/<self|pid>/fd" prefix off `p`, returning the tail -- "" for
+- * the pin directory itself, otherwise a string starting with '/'.  NULL when `p`
+- * is not in the fd-pin namespace at all. */
++/* Split a recognised fd-pin prefix off `p`, returning the tail -- "" for the
++ * pin directory itself, otherwise a string starting with '/'.  NULL when `p`
++ * is not in an fd-pin namespace. */
+ static const char *fd_pin_tail(const char *p)
+ {
+ 	const char *s;
+ 
++	if (strncmp(p, "/dev/fd", 7) == 0) {
++		s = p + 7;
++		return (*s == '\0' || *s == '/') ? s : NULL;
++	}
++
+ 	if (strncmp(p, "/proc/", 6) != 0)
+ 		return NULL;
+ 	s = p + 6;
+@@ -168,8 +173,8 @@ static const char *fd_pin_tail(const char *p)
+ 	return (*s == '\0' || *s == '/') ? s : NULL;
+ }
+ 
+-/* An EXACT pin entry, "/proc/self/fd/7" -- the one spelling whose target is what
+- * confinement must judge.  rrsync also writes a pinned parent as
++/* An EXACT pin entry, such as "/proc/self/fd/7" or "/dev/fd/7", whose target is
++ * what confinement must judge.  rrsync also writes a pinned parent as
+  * ".../fd/7/<leaf>", but the walk resolves the magic link itself and checks the
+  * components past it, so only the bare entry is resolved here.  Requiring all
+  * digits keeps a planted name like ".../fd/outside-secret" out. */
+@@ -401,9 +406,14 @@ static int ona_open(const char *path, int flags, mode_t mode, char *out_abs, siz
+ 		}
+ 
+ 		if (S_ISLNK(lst.st_mode)) {
+-			/* Symlink: untrusted owner is refused; trusted owner
+-			 * is followed via readlinkat + splice. */
+-			if (lst.st_uid != 0 && lst.st_uid != trusted_uid) {
++			/* Symlink: untrusted owner is refused; trusted owner is followed
++			 * via readlinkat + splice.  In a user namespace the /proc/self and
++			 * /dev/fd symlinks may report the overflow uid, so
++			 * allow those exact components while traversing a recognised pin. */
++			int namespace_pin = pin_transit
++				&& ((strcmp(abspath, "/proc") == 0 && strcmp(comp, "self") == 0)
++				 || (strcmp(abspath, "/dev") == 0 && strcmp(comp, "fd") == 0));
++			if (!namespace_pin && lst.st_uid != 0 && lst.st_uid != trusted_uid) {
+ 				saved_errno = ELOOP;
+ 				goto out;
+ 			}
+diff --git a/testsuite/rrsync-userns-procfs_test.py b/testsuite/rrsync-userns-procfs_test.py
+new file mode 100644
+index 000000000..fa2aaf3dc
+--- /dev/null
++++ b/testsuite/rrsync-userns-procfs_test.py
+@@ -0,0 +1,133 @@
++#!/usr/bin/env python3
++"""A confined fd pin must remain usable inside a Linux user namespace."""
++
++import os
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++from rsyncfns import makepath, rmtree, rsync_argv, test_fail, test_skipped
++
++
++if not sys.platform.startswith('linux'):
++    test_skipped('rrsync-userns-procfs is Linux-specific')
++
++if not os.environ.get('RSYNC_USERNS_PROCFS'):
++    unshare = shutil.which('unshare')
++    if unshare is None:
++        test_skipped('unshare is unavailable')
++    env = os.environ.copy()
++    env['RSYNC_USERNS_PROCFS'] = '1'
++    launch_dir = Path(tempfile.mkdtemp(prefix='rsync-userns-launch-'))
++    launch_dir.chmod(0o755)
++    testdir = Path(__file__).resolve().parent
++    child_test = launch_dir / Path(__file__).name
++    for source in (Path(__file__), testdir / 'rsyncfns.py',
++                   testdir / 'exitcodes.py'):
++        shutil.copy2(source, launch_dir / source.name)
++    rsync_cmd = shlex.split(env['RSYNC'])
++    for i, arg in enumerate(rsync_cmd):
++        if Path(arg).name in ('rsync', 'rsync.exe') and Path(arg).is_file():
++            staged_rsync = launch_dir / Path(arg).name
++            shutil.copy2(arg, staged_rsync)
++            staged_rsync.chmod(0o755)
++            rsync_cmd[i] = str(staged_rsync)
++            break
++    else:
++        rmtree(launch_dir)
++        test_fail(f'cannot locate the rsync executable in {env["RSYNC"]!r}')
++    env['RSYNC'] = shlex.join(rsync_cmd)
++    launcher = []
++    if os.geteuid() == 0:
++        setpriv = shutil.which('setpriv')
++        if setpriv is None:
++            test_skipped('setpriv is unavailable for the root-run testsuite')
++        launcher = [setpriv, '--reuid=65534', '--regid=65534', '--clear-groups']
++    unshare_argv = [unshare, '--user', '--map-root-user', '--mount', '--pid',
++                    '--fork', '--mount-proc']
++    probe = subprocess.run(
++        launcher + unshare_argv + ['true'],
++        stdin=subprocess.DEVNULL,
++        stdout=subprocess.DEVNULL,
++        stderr=subprocess.DEVNULL,
++    )
++    if probe.returncode != 0:
++        rmtree(launch_dir)
++        print(f'user namespaces unavailable (rc={probe.returncode})')
++        raise SystemExit(0)
++    try:
++        proc = subprocess.run(
++            launcher + unshare_argv
++            + [sys.executable, str(child_test)],
++            env=env,
++            timeout=30,
++        )
++    except subprocess.TimeoutExpired:
++        test_fail('user-namespace regression test timed out')
++    finally:
++        rmtree(launch_dir)
++    if proc.returncode != 0:
++        test_fail(f'user-namespace regression test failed (rc={proc.returncode})')
++    print('rrsync fd pin works inside a user namespace')
++    raise SystemExit(0)
++
++proc_uid = os.lstat('/proc/self').st_uid
++if proc_uid in (0, os.geteuid()):
++    test_skipped('/proc/self does not expose an overflow uid in this namespace')
++
++base = Path(tempfile.mkdtemp(prefix='rsync-userns-procfs-'))
++src = base / 'src'
++dest = base / 'dest'
++outside = base / 'outside'
++makepath(src, dest, outside)
++(src / 'file').write_text('content\n')
++
++fd_roots = ['/proc/self/fd']
++if Path('/dev/fd').exists():
++    fd_roots.append('/dev/fd')
++
++dest_fd = os.open(dest, os.O_RDONLY | os.O_DIRECTORY)
++try:
++    for index, fd_root in enumerate(fd_roots):
++        log_file = dest / f'rsync-{index}.log'
++        proc = subprocess.run(
++            rsync_argv('-a', f'--confine-root={dest}',
++                       f'--log-file={fd_root}/{dest_fd}/{log_file.name}',
++                       str(src) + '/', str(dest) + '/'),
++            pass_fds=(dest_fd,),
++            capture_output=True,
++            text=True,
++        )
++        ctx = (f'fd_root={fd_root!r}, rc={proc.returncode}, '
++               f'stderr={proc.stderr.strip()[:300]!r}')
++        if proc.returncode != 0:
++            test_fail(f'confined transfer through an fd pin failed ({ctx})')
++        if not log_file.is_file():
++            test_fail(f'confined log path through an fd pin was rejected ({ctx})')
++        if (dest / 'file').read_text() != 'content\n':
++            test_fail(f'confined transfer did not deliver the file ({ctx})')
++finally:
++    os.close(dest_fd)
++
++outside_list = outside / 'files-from'
++outside_list.write_text('file\n')
++for fd_root in fd_roots:
++    outside_fd = os.open(outside_list, os.O_RDONLY)
++    try:
++        proc = subprocess.run(
++            rsync_argv('-a', f'--confine-root={dest}',
++                       f'--files-from={fd_root}/{outside_fd}',
++                       str(src) + '/', str(dest) + '/'),
++            pass_fds=(outside_fd,),
++            capture_output=True,
++            text=True,
++        )
++    finally:
++        os.close(outside_fd)
++    if proc.returncode == 0 or 'failed to open files-from file' not in proc.stderr:
++        test_fail(f'outside {fd_root} pin was not observably refused: '
++                  f'rc={proc.returncode}, stderr={proc.stderr!r}')
++rmtree(base)
+diff --git a/testsuite/skiplist/cygwin.txt b/testsuite/skiplist/cygwin.txt
+index ba499cc54..46060e16f 100644
+--- a/testsuite/skiplist/cygwin.txt
++++ b/testsuite/skiplist/cygwin.txt
+@@ -56,6 +56,7 @@ rename-mixed-parent-transfer
+ rrsync-sender-leaf-flip
+ rrsync-sender-parent-pin
+ rrsync-symlink
++rrsync-userns-procfs
+ sender-remove-source-root-anchor
+ simd-checksum
+ source-change-size-continues
+diff --git a/testsuite/skiplist/macos.txt b/testsuite/skiplist/macos.txt
+index 3e7653ce8..5952c8143 100644
+--- a/testsuite/skiplist/macos.txt
++++ b/testsuite/skiplist/macos.txt
+@@ -26,6 +26,7 @@ readonly-partial-abort-mode-regression  #
+ rrsync-sender-leaf-flip
+ rrsync-sender-parent-pin
+ rrsync-symlink
++rrsync-userns-procfs
+ sender-remove-source-root-anchor
+ simd-checksum
+ source-change-size-continues
