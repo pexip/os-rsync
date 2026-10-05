@@ -1,4 +1,4 @@
-.TH "rrsync" "1" "15 Jan 2025" "rrsync from rsync 3.4.1" "User Commands"
+.TH "rrsync" "1" "13 Aug 2026" "rrsync from rsync 3.5.0" "User Commands"
 .\" prefix=/usr
 .P
 .SH "NAME"
@@ -8,7 +8,7 @@ rrsync \- a script to setup restricted rsync users via ssh logins
 .SH "SYNOPSIS"
 .P
 .nf
-rrsync [-ro|-wo] [-munge] [-no-del] [-no-lock] [-no-overwrite]  DIR
+rrsync [-ro|-wo] [-munge] [-absolute] [-no-del] [-no-lock] [-no-overwrite] DIR
 .fi
 .P
 The single non-option argument specifies the restricted \fIDIR\fP to use. It can be
@@ -81,14 +81,26 @@ Allow only reading from the DIR. Implies \fB\-no-del\fP and
 .IP "\fB\-wo\fP"
 Allow only writing to the DIR.
 .IP "\fB\-munge\fP"
-Enable rsync's \fB\-\-munge-links\fP on the server side.
+Enable rsync's \fB\-\-munge\-links\fP on the server side.
+.IP "\fB\-absolute\fP"
+Allow file-transfer arguments to name the restricted directory using its
+absolute server path. For example, with \fBrrsync\ \-absolute\ /path/to/root\fP,
+the transfer arg \fB/path/to/root/dir1\fP is accepted as an alias for \fBdir1\fP.
 .IP "\fB\-no-del\fP"
 Disable rsync's \fB\-\-delete*\fP and \fB\-\-remove*\fP options.
 .IP "\fB\-no-lock\fP"
 Avoid the single-run (per-user) lock check.  Useful with \fB\-munge\fP.
 .IP "\fB\-no-overwrite\fP"
-Enforce \fB\-\-ignore-existing\fP on the server. Prevents overwriting existing
+Enforce \fB\-\-ignore\-existing\fP on the server. Prevents overwriting existing
 files when the server is the receiver.
+.IP
+Because \fB\-\-ignore\-existing\fP protects only the file being transferred, this
+also refuses the options that can reach a \fIdifferent\fP existing file in the
+restricted dir: \fB\-\-log\-file\fP, \fB\-\-partial\-dir\fP, \fB\-\-delay\-updates\fP, and
+backup mode (\fB\-b\fP, \fB\-\-backup\-dir\fP, whose published backup replaces whatever
+already occupies the backup name). Resumable uploads with an explicit
+\fB\-\-partial\-dir\fP, \fB\-\-delay\-updates\fP, and server-side logging are therefore
+unavailable under this option.
 .IP "\fB\-help\fP, \fB\-h\fP"
 Output this help message and exit.
 .P
@@ -97,13 +109,13 @@ Output this help message and exit.
 The rrsync script validates the path arguments it is sent to try to restrict
 them to staying within the specified DIR.
 .P
-The rrsync script rejects rsync's \fB\-\-copy-links\fP option (by
+The rrsync script rejects rsync's \fB\-\-copy\-links\fP option (by
 default) so that a copy cannot dereference a symlink within the DIR to get to a
 file outside the DIR.
 .P
-The rrsync script rejects rsync's \fB\-\-protect-args\fP (\fB\-s\fP) option
+The rrsync script rejects rsync's \fB\-\-protect\-args\fP (\fB\-s\fP) option
 because it would allow options to be sent to the server-side that the script
-cannot check.  If you want to support \fB\-\-protect-args\fP, use a daemon-over-ssh
+cannot check.  If you want to support \fB\-\-protect\-args\fP, use a daemon-over-ssh
 setup.
 .P
 The rrsync script accepts just a subset of rsync's options that the real rsync
@@ -155,7 +167,7 @@ command="rrsync -ro results" ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAIEAmk...
 .P
 .SH "VERSION"
 .P
-This manpage is current for version 3.4.1 of rsync.
+This manpage is current for version 3.5.0 of rsync.
 .P
 .SH "CREDITS"
 .P
